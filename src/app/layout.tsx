@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { Providers } from './Providers'
 
 export const metadata: Metadata = {
   title: 'Nadobot - Professional Nado Trading Bot',
@@ -14,17 +15,19 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <nav className="container navbar">
-          <div className="logo">
-            <span className="text-gradient">Nado</span>bot
-          </div>
-          <div>
-            <a href="/dashboard" className="btn btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
-              Launch App
-            </a>
-          </div>
-        </nav>
-        {children}
+        <Providers>
+          <nav className="container navbar">
+            <div className="logo">
+              <span className="text-gradient">Nado</span>bot
+            </div>
+            <div>
+              <a href="/dashboard" className="btn btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
+                Launch App
+              </a>
+            </div>
+          </nav>
+          {children}
+        </Providers>
       </body>
     </html>
   )
