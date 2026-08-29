@@ -17,7 +17,7 @@ export default function Home() {
             Connect Wallet
           </Link>
           <a href="https://github.com/timothy0987/nadobot" target="_blank" rel="noreferrer" className="btn btn-secondary">
-            View Source
+            View Bot Source
           </a>
         </div>
 
