@@ -2,6 +2,8 @@
 
 # dependencies
 /node_modules
+bot/node_modules
+bot/dist
 /.pnp
 .pnp.*
 .yarn/*
@@ -30,8 +32,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files (never commit real secrets/private keys)
 .env*
+!.env.example
+!bot/.env.example
 
 # vercel
 .vercel
