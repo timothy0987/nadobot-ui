@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Nadobot
 
-## Getting Started
+An automated trading companion for [Nado](https://www.nado.xyz), the unified spot/perps orderbook DEX on Ink L2. Two parts in this repo:
 
-First, run the development server:
+- **Dashboard** (repo root) - a Next.js app: connect your wallet, view live balances/positions/orders, and set stop-loss/take-profit protection on an open position. Deployed on Vercel.
+- **`bot/`** - a Node/TypeScript always-on bot: watches the market, opens positions on a configurable dip-buy strategy, and keeps every open position protected with server-side stop-loss/take-profit trigger orders so a trade stays managed even if the bot's host goes offline. Meant to run continuously (e.g. on Railway), not on Vercel's serverless runtime.
+
+## How "trade while offline" works
+
+Both the dashboard and the bot use [Nado's trigger service](https://docs.nado.xyz/developer-resources/api/trigger) to attach stop-loss / take-profit as conditional orders that live on Nado's own infrastructure. Once placed, they fire on Nado's servers when the price condition is met - independent of whether the bot process or your browser is still running.
+
+## Dashboard - local development
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Bot - local development
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+cd bot
+npm install
+cp .env.example .env   # fill in PRIVATE_KEY; defaults to Nado testnet (Ink Sepolia)
+npm run dev
+```
 
-## Learn More
+See [`bot/.env.example`](bot/.env.example) for every config option (strategy, stop-loss/take-profit %, testnet vs mainnet).
 
-To learn more about Next.js, take a look at the following resources:
+## Deployment
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Dashboard**: Vercel, root directory = repo root.
+- **Bot**: Railway (`bot/Dockerfile` + `bot/railway.json` already set up) - set the same env vars as `bot/.env.example` in the Railway project, with a real `PRIVATE_KEY` for the bot's trading wallet.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Start on testnet (`NADO_ENV=testnet`, the default) before ever pointing the bot at a mainnet wallet.
