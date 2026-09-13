@@ -9,8 +9,9 @@ export async function getSubaccountInfo(sender: string) {
   return response.data;
 }
 
-export async function getOpenOrders(sender: string) {
-  const payload = { type: 'subaccount_orders', subaccount: sender };
+/** Unlike subaccount_info, this query takes `sender` (not `subaccount`) and requires a product_id. */
+export async function getOpenOrders(sender: string, productId: number) {
+  const payload = { type: 'subaccount_orders', sender, product_id: productId };
   const response = await axios.post(`${ENV.NADO_GATEWAY_URL}/query`, payload, { headers });
   return response.data;
 }

@@ -102,11 +102,12 @@ export async function fetchSubaccountInfo(network: NadoNetwork, sender: string) 
   return res.json();
 }
 
-export async function fetchOpenOrders(network: NadoNetwork, sender: string) {
+/** Unlike subaccount_info, this query takes `sender` (not `subaccount`) and requires a product_id. */
+export async function fetchOpenOrders(network: NadoNetwork, sender: string, productId: number) {
   const res = await fetch(`${network.gatewayUrl}/query`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...gatewayHeaders },
-    body: JSON.stringify({ type: 'subaccount_orders', subaccount: sender }),
+    body: JSON.stringify({ type: 'subaccount_orders', sender, product_id: productId }),
   });
   return res.json();
 }

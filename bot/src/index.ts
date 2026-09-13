@@ -25,7 +25,7 @@ async function main() {
     const info = await getSubaccountInfo(sender);
     console.log('Subaccount exists:', info.data.exists);
 
-    const orders = await getOpenOrders(sender);
+    const orders = await getOpenOrders(sender, productId);
     console.log(`Open orders: ${orders.data?.orders?.length ?? 0}`);
   } catch (error) {
     console.error('Failed to fetch info on startup:', error);

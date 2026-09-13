@@ -64,7 +64,7 @@ export default function Dashboard() {
         setPosition(extractPerpPosition(info, productId));
       }
 
-      const orders = await fetchOpenOrders(network, sender);
+      const orders = await fetchOpenOrders(network, sender, productId);
       if (orders.status === 'success') setOpenOrders(orders.data.orders || []);
     } catch (error) {
       console.error('Failed to fetch Nado data', error);
