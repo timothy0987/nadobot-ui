@@ -504,7 +504,8 @@ export interface BotStatus {
 }
 
 export async function fetchBotStatus(): Promise<BotStatus> {
-  const res = await fetch(`${BOT_STATUS_URL.replace(/\/$/, '')}/status`, { cache: 'no-store' });
+  // While Railway swaps containers on a redeploy, requests can hang; fail fast so the panel says "Not responding".
+  const res = await fetch(`${BOT_STATUS_URL.replace(/\/$/, '')}/status`, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`Bot status endpoint returned ${res.status}`);
   return res.json();
 }

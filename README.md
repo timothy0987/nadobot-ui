@@ -70,6 +70,6 @@ Leave both at `0` until registered: Nado rejects a fee rate without a valid buil
 ## Deployment
 
 - **Dashboard:** Vercel, root directory = repo root.
-- **Bot:** Railway service created from this GitHub repo with Root Directory `/bot`, the variables from `bot/.env.example`, and a generated public domain for the status endpoint. It auto-deploys on every push to `main`.
+- **Bot:** Railway service created from this GitHub repo with Root Directory `/bot`, the variables from `bot/.env.example`, and a generated public domain for the status endpoint. It auto-deploys on pushes to `main`; set Settings → Build → Watch Paths to `/bot/**` so dashboard-only changes don't restart the bot (a restart resets its dip-buy session high).
 
 Start on testnet (`NADO_ENV=testnet`, the default) before pointing anything at mainnet funds.
