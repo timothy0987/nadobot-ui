@@ -56,7 +56,13 @@ async function main() {
       ENV.DAILY_LOSS_LIMIT_USD > 0 ? `$${ENV.DAILY_LOSS_LIMIT_USD}` : 'disabled'
     }`
   );
-  if (ENV.TRADING_PAUSED) await notify('Kill switch is ON: no new buys. Open positions stay protected.');
+  // Sent on every start so a new alert setup is confirmed immediately, and restarts are never silent.
+  await notify(
+    `Bot started on ${ENV.PRODUCT_SYMBOL}: buy ${ENV.TRADE_AMOUNT} on a ${ENV.TRADE_DROP_PERCENTAGE * 100}% dip (max ${ENV.MAX_POSITION_SIZE}), ` +
+      `SL -${ENV.STOP_LOSS_PERCENT * 100}% / TP +${ENV.TAKE_PROFIT_PERCENT * 100}%, daily loss limit ${
+        ENV.DAILY_LOSS_LIMIT_USD > 0 ? `$${ENV.DAILY_LOSS_LIMIT_USD}` : 'off'
+      }.${ENV.TRADING_PAUSED ? ' Kill switch is ON: no new buys.' : ''}`
+  );
 
   if (!ENV.ENABLE_DIP_BUY) {
     console.log('Dip-buy entry strategy disabled (ENABLE_DIP_BUY=false). Running in protection-only mode.');
