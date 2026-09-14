@@ -3,8 +3,8 @@ import { getPerpPosition, PerpPosition } from './position';
 import { placeTriggerOrder, listTriggerOrders, cancelTriggerOrders, TriggerOrderEntry } from './trigger';
 import { getProductIncrements } from './products';
 import { roundToIncrement, RoundMode } from '../nado/ticks';
-import { notify } from '../alerts';
-import { botState, recordError } from '../state';
+import { notify, recordError } from '../alerts';
+import { botState } from '../state';
 
 const SLIPPAGE_TOLERANCE = 0.005; // execution limit buffer past the trigger price so the IOC fill goes through
 const PRICE_MATCH_TOLERANCE_BPS = 25n; // an existing order within 0.25% of the target price still counts as correct

@@ -9,8 +9,8 @@ import { subaccountToBytes32 } from './nado/subaccount';
 import { OrderType } from './nado/appendix';
 import { ENV } from './config/env';
 import { account } from './viem/client';
-import { notify } from './alerts';
-import { botState, recordError } from './state';
+import { notify, recordError } from './alerts';
+import { botState } from './state';
 import { startStatusServer } from './status';
 import { refreshRisk, currentBuyBlock, startRiskLoop } from './trading/risk';
 
@@ -56,7 +56,7 @@ async function main() {
       ENV.DAILY_LOSS_LIMIT_USD > 0 ? `$${ENV.DAILY_LOSS_LIMIT_USD}` : 'disabled'
     }`
   );
-  // Sent on every start so a new alert setup is confirmed immediately, and restarts are never silent.
+  // Marks each restart in the dApp activity feed, since the in-memory log starts fresh.
   await notify(
     `Bot started on ${ENV.PRODUCT_SYMBOL}: buy ${ENV.TRADE_AMOUNT} on a ${ENV.TRADE_DROP_PERCENTAGE * 100}% dip (max ${ENV.MAX_POSITION_SIZE}), ` +
       `SL -${ENV.STOP_LOSS_PERCENT * 100}% / TP +${ENV.TAKE_PROFIT_PERCENT * 100}%, daily loss limit ${
@@ -96,7 +96,7 @@ async function main() {
       const beforeAmount = before ? Number(before.amount) / 1e18 : 0;
       if (exceedsPositionCap(beforeAmount, ENV.TRADE_AMOUNT, ENV.MAX_POSITION_SIZE)) {
         const reason = `Skipped buy at $${currentPrice.toFixed(2)}: position ${beforeAmount} + ${ENV.TRADE_AMOUNT} would exceed cap ${ENV.MAX_POSITION_SIZE}`;
-        if (botState.lastSkippedBuyReason === null) await notify(reason);
+        if (botState.lastSkippedBuyReason === null) await notify(reason, 'warn');
         botState.lastSkippedBuyReason = reason;
         console.log(reason);
         botState.sessionHigh = currentPrice;
@@ -132,8 +132,7 @@ async function main() {
     } catch (e: any) {
       const message = e.response?.data?.error ?? e.message;
       console.error('Error executing trade:', message);
-      recordError(`trade: ${message}`);
-      await notify(`Buy attempt failed: ${message}`);
+      recordError(`Buy attempt failed: ${message}`);
     }
   });
 }

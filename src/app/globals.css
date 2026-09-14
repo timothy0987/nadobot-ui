@@ -376,3 +376,93 @@ button:disabled {
 .table-scroll {
   overflow-x: auto;
 }
+
+/* In-app notifications */
+.toasts {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: min(380px, calc(100vw - 2.5rem));
+}
+
+.toast {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 0.9rem 1rem;
+  background: rgba(26, 29, 36, 0.95);
+  border-left: 3px solid var(--success);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+
+.toast.warn {
+  border-left-color: #f59e0b;
+}
+
+.toast.error {
+  border-left-color: var(--danger);
+}
+
+.toast strong {
+  font-size: 0.9rem;
+}
+
+.toast p {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-top: 0.2rem;
+  line-height: 1.4;
+}
+
+.toast-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.activity {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.activity li {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.activity li p {
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.activity li .muted {
+  font-size: 0.8rem;
+}
+
+.activity-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 0.4rem;
+  border-radius: 50%;
+  background: var(--success);
+}
+
+.activity li.warn .activity-dot {
+  background: #f59e0b;
+}
+
+.activity li.error .activity-dot {
+  background: var(--danger);
+}

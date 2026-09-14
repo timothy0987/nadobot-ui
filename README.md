@@ -23,7 +23,7 @@ All three live on Nado's servers, so the plan runs whether or not the dashboard 
 - **Kill switch:** set `TRADING_PAUSED=true` in Railway to stop all new buys at once. Open positions stay protected.
 - **Daily loss limit:** once today's realized PnL minus fees reaches -`DAILY_LOSS_LIMIT_USD` (default $25), new buys pause until 00:00 UTC. It is computed from Nado's own trade history, so a restart can't reset it, and buys pause if that history can't be read. It counts realized losses; an open position's unrealized loss is capped by its stop-loss instead.
 - **Status:** `GET /status` serves read-only JSON (strategy, position, protection, last error) that the dashboard displays.
-- **Alerts:** optional Telegram and/or Discord messages on buys, protection changes, closed positions and errors.
+- **Alerts in the dApp:** the bot keeps an activity log (started, bought, protection placed/resized, position closed, loss limit hit, errors) that the dashboard shows as a feed and pops up as notifications.
 
 Every price and size is rounded to the market's tick and lot size; Nado rejects anything off-grid.
 
@@ -64,10 +64,15 @@ Orders placed by the dashboard and the bot carry a builder ID and fee rate, so t
 
 Leave both at `0` until registered: Nado rejects a fee rate without a valid builder ID.
 
-## Alerts setup
+## Alerts
 
-- **Telegram:** create a bot with [@BotFather](https://t.me/BotFather), send it a message, then read your chat id from `https://api.telegram.org/bot<token>/getUpdates`. Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` on Railway.
-- **Discord:** Server Settings → Integrations → Webhooks → New Webhook → Copy URL. Set `DISCORD_WEBHOOK_URL` on Railway.
+Alerts live inside the dApp. No Telegram or other third-party bot is involved.
+
+- **Bot activity:** the dashboard shows the bot's activity feed and pops a notification for each new event.
+- **Your orders:** when a connected wallet's order fills (a plan entry, stop-loss or take-profit), the dashboard shows it with size, price and any realized PnL.
+- **Browser notifications:** click *Enable notifications* on the dashboard to also get system notifications while the dashboard is open in any tab.
+
+The dashboard has to be open (even in a background tab) to notify you. Your plans and the bot keep trading on Nado either way. The bot's activity log lives in memory, so a restart starts it fresh; its trade history always comes from Nado.
 
 ## Deployment
 

@@ -1,16 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import {
-  BOT_STATUS_URL,
-  INK_MAINNET,
-  INK_SEPOLIA,
-  fetchBotStatus,
-  fetchMatches,
-  fetchSymbols,
-  type BotStatus as Status,
-  type Match,
-} from '@/lib/nado';
+import { BOT_STATUS_URL, type BotStatus as Status, type Match } from '@/lib/nado';
 
 const usd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 const ago = (iso: string | null) => {
@@ -19,36 +9,14 @@ const ago = (iso: string | null) => {
   return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`;
 };
 
-/** Read-only view of the always-on bot: its strategy, position, protection and recent fills. No wallet needed. */
-export function BotStatus() {
-  const [status, setStatus] = useState<Status | null>(null);
-  const [fills, setFills] = useState<Match[]>([]);
-  const [error, setError] = useState<string | null>(null);
+interface Props {
+  status: Status | null;
+  fills: Match[];
+  error: string | null;
+}
 
-  useEffect(() => {
-    if (!BOT_STATUS_URL) return;
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const s = await fetchBotStatus();
-        if (cancelled) return;
-        setStatus(s);
-        setError(null);
-        const network = s.network === 'mainnet' ? INK_MAINNET : INK_SEPOLIA;
-        const symbol = (await fetchSymbols(network))[s.product];
-        if (symbol) setFills(await fetchMatches(network, s.subaccount, [symbol.product_id], 10));
-      } catch (e: any) {
-        if (!cancelled) setError(e.message);
-      }
-    };
-    load();
-    const id = setInterval(load, 15_000);
-    return () => {
-      cancelled = true;
-      clearInterval(id);
-    };
-  }, []);
-
+/** Read-only view of the always-on bot: strategy, position, protection, risk, activity and fills. No wallet needed. */
+export function BotStatus({ status, fills, error }: Props) {
   if (!BOT_STATUS_URL) {
     return (
       <div className="glass panel">
@@ -60,7 +28,9 @@ export function BotStatus() {
     );
   }
 
-  const online = status && status.lastProtectionCheckAt && Date.now() - new Date(status.lastProtectionCheckAt).getTime() < 120_000;
+  // The bot heartbeats through its protection loop (every 30s) and risk loop (every 60s); either one proves it is alive.
+  const lastBeat = [status?.lastProtectionCheckAt, status?.risk?.checkedAt].filter(Boolean).map((t) => new Date(t!).getTime());
+  const online = lastBeat.length > 0 && Date.now() - Math.max(...lastBeat) < 120_000;
 
   return (
     <div className="glass panel">
@@ -102,7 +72,9 @@ export function BotStatus() {
             </div>
             <div>
               <span>Protection</span>
-              {status.protection
+              {!status.strategy.protectionEnabled
+                ? 'Off'
+                : status.protection
                 ? `SL ${usd(status.protection.stopPrice)} · TP ${usd(status.protection.takeProfitPrice)}`
                 : status.position
                   ? 'Being placed…'
@@ -111,10 +83,6 @@ export function BotStatus() {
             <div>
               <span>Last buy · last check</span>
               {ago(status.lastBuyAt)} · {ago(status.lastProtectionCheckAt)}
-            </div>
-            <div>
-              <span>Alerts</span>
-              {status.alertsConfigured ? 'Telegram/Discord on' : 'Not configured'}
             </div>
             <div>
               <span>Today (UTC) · loss limit</span>
@@ -134,10 +102,25 @@ export function BotStatus() {
           {status.lastSkippedBuyReason && status.lastSkippedBuyReason !== status.risk?.buyBlockedReason && (
             <div className="notice">{status.lastSkippedBuyReason}</div>
           )}
-          {status.lastError && (
-            <div className="notice error">
-              Last error {ago(status.lastError.at)}: {status.lastError.message}
-            </div>
+
+          <h4 style={{ marginTop: '1.5rem', marginBottom: '0.5rem' }}>Activity</h4>
+          {!status.events?.length ? (
+            <p className="muted">No activity since the bot last started.</p>
+          ) : (
+            <ul className="activity">
+              {status.events.slice(0, 12).map((e) => (
+                <li key={`${status.startedAt}:${e.id}`} className={e.level}>
+                  <span className="activity-dot" aria-hidden />
+                  <div>
+                    <p>
+                      {e.message}
+                      {e.count > 1 && <span className="pill" style={{ marginLeft: '0.5rem' }}>×{e.count}</span>}
+                    </p>
+                    <span className="muted">{ago(e.at)}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
 
           <h4 style={{ marginTop: '1.5rem', marginBottom: '0.5rem' }}>Recent bot fills</h4>

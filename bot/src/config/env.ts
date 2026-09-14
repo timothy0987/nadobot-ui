@@ -62,11 +62,6 @@ export const ENV = {
   TAKE_PROFIT_PERCENT: parseFloat(process.env.TAKE_PROFIT_PERCENT || '0.10'),
   PROTECTION_CHECK_INTERVAL_SECONDS: parseInt(process.env.PROTECTION_CHECK_INTERVAL_SECONDS || '30', 10),
 
-  // Optional alerts. Leave unset to disable.
-  TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
-  TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '',
-  DISCORD_WEBHOOK_URL: process.env.DISCORD_WEBHOOK_URL || '',
-
   // Read-only JSON status endpoint for the dashboard. Railway injects PORT automatically.
   PORT: parseInt(process.env.PORT || '8080', 10),
 };

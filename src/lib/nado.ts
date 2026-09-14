@@ -206,6 +206,7 @@ export function extractPerpPosition(subaccountInfo: any, productId: number): Per
 
 export interface Match {
   digest: string;
+  productId: number;
   submissionIdx: string;
   timestamp: number;
   baseFilled: number;
@@ -226,6 +227,7 @@ export async function fetchMatches(network: NadoNetwork, subaccount: string, pro
   const times = new Map<string, number>((json.txs ?? []).map((t: any) => [String(t.submission_idx), Number(t.timestamp)]));
   return (json.matches ?? []).map((m: any) => ({
     digest: m.digest,
+    productId: Number(m.pre_balance?.base?.perp?.product_id ?? m.pre_balance?.base?.spot?.product_id ?? -1),
     submissionIdx: String(m.submission_idx),
     timestamp: times.get(String(m.submission_idx)) ?? 0,
     baseFilled: fromX18(m.base_filled),
@@ -476,6 +478,14 @@ export async function createTradePlan(network: NadoNetwork, sign: SignTypedDataA
 // Public, read-only endpoint of the always-on bot on Railway. Override per deployment with the env var.
 export const BOT_STATUS_URL = process.env.NEXT_PUBLIC_BOT_STATUS_URL ?? 'https://nadobot-production.up.railway.app';
 
+export interface BotEvent {
+  id: number;
+  at: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+  count: number;
+}
+
 export interface BotStatus {
   network: string;
   botAddress: string;
@@ -502,7 +512,7 @@ export interface BotStatus {
   position: { amount: number; avgEntryPrice: number } | null;
   protection: { stopPrice: number; takeProfitPrice: number; size: number; digests: string[] } | null;
   lastError: { at: string; message: string } | null;
-  alertsConfigured: boolean;
+  events?: BotEvent[];
   risk?: { dailyNetPnl: number | null; checkedAt: string | null; buyBlockedReason: string | null };
 }
 

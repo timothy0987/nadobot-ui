@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { ENV } from '../config/env';
-import { notify } from '../alerts';
-import { botState, recordError } from '../state';
+import { notify, recordError } from '../alerts';
+import { botState } from '../state';
 
 export interface Fill {
   submissionIdx: bigint;
@@ -85,7 +85,7 @@ export async function refreshRisk(sender: string) {
   const limitHit = block?.startsWith('Daily loss limit hit') ?? false;
   if (limitHit && lastLimitAlertDay !== dayStart) {
     lastLimitAlertDay = dayStart;
-    await notify(`${block} Open positions stay protected by their stop-loss/take-profit.`);
+    await notify(`${block} Open positions stay protected by their stop-loss/take-profit.`, 'warn');
   }
 }
 

@@ -1,3 +1,5 @@
+import type { BotEvent } from './alerts';
+
 /** In-memory snapshot of what the bot is doing, served read-only by the status endpoint. */
 export const botState = {
   startedAt: new Date().toISOString(),
@@ -14,8 +16,7 @@ export const botState = {
     checkedAt: null as string | null,
     buyBlockedReason: null as string | null,
   },
+  // Newest first. Lives in memory, so a restart starts a fresh log (the "Bot started" event marks it).
+  events: [] as BotEvent[],
 };
 
-export function recordError(message: string) {
-  botState.lastError = { at: new Date().toISOString(), message };
-}

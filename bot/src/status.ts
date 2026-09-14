@@ -38,7 +38,6 @@ export function startStatusServer(botAddress: string, subaccount: string) {
       },
       ...botState,
       entryTriggerPrice: botState.sessionHigh ? botState.sessionHigh * (1 - ENV.TRADE_DROP_PERCENTAGE) : null,
-      alertsConfigured: Boolean((ENV.TELEGRAM_BOT_TOKEN && ENV.TELEGRAM_CHAT_ID) || ENV.DISCORD_WEBHOOK_URL),
     };
     res.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify(body));
   });
