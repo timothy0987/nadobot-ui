@@ -21,7 +21,8 @@ import { TradePlanForm } from './components/TradePlanForm';
 import { MyOrders } from './components/MyOrders';
 import { ProtectPosition } from './components/ProtectPosition';
 import { BotStatus } from './components/BotStatus';
-import { Toasts, useBotStatus, useNotifications, useWalletFills } from './notifications';
+import { Toasts, useBotStatus, useNotifications, usePush, useWalletFills } from './notifications';
+import { PushSettings } from './components/PushSettings';
 
 const MARKETS = ['BTC-PERP', 'ETH-PERP'];
 const usd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -49,7 +50,8 @@ export default function Dashboard() {
   const marketIds = useMemo(() => MARKETS.map((m) => symbols[m]?.product_id).filter((id): id is number => id !== undefined), [symbols]);
   const symbolById = useMemo(() => Object.fromEntries(Object.values(symbols).map((s) => [s.product_id, s.symbol])), [symbols]);
   const walletFills = useWalletFills(network, sender, marketIds);
-  const { toasts, dismiss, permission, requestPermission } = useNotifications(bot.status, walletFills, symbolById);
+  const push = usePush(sender, network.chainId);
+  const { toasts, dismiss } = useNotifications(bot.status, walletFills, symbolById, push.enabled);
 
   useEffect(() => {
     fetchSymbols(network).then(setSymbols).catch((e) => console.error('Failed to fetch symbols', e));
@@ -97,11 +99,6 @@ export default function Dashboard() {
               ))}
             </select>
           </label>
-          {permission === 'default' && (
-            <button className="btn btn-secondary btn-sm" onClick={requestPermission} title="Get notified about fills and bot activity while this tab is open">
-              Enable notifications
-            </button>
-          )}
           <ConnectButton />
         </div>
       </div>
@@ -174,6 +171,16 @@ export default function Dashboard() {
         </>
       )}
 
+      <PushSettings
+        support={push.support}
+        enabled={push.enabled}
+        topics={push.topics}
+        busy={push.busy}
+        error={push.error}
+        walletConnected={Boolean(sender)}
+        enable={push.enable}
+        disable={push.disable}
+      />
       <BotStatus status={bot.status} fills={bot.fills} error={bot.error} />
       <Toasts toasts={toasts} dismiss={dismiss} />
     </main>

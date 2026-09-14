@@ -62,8 +62,14 @@ export const ENV = {
   TAKE_PROFIT_PERCENT: parseFloat(process.env.TAKE_PROFIT_PERCENT || '0.10'),
   PROTECTION_CHECK_INTERVAL_SECONDS: parseInt(process.env.PROTECTION_CHECK_INTERVAL_SECONDS || '30', 10),
 
-  // Read-only JSON status endpoint for the dashboard. Railway injects PORT automatically.
+  // Status + push API for the dashboard. Railway injects PORT automatically.
   PORT: parseInt(process.env.PORT || '8080', 10),
+
+  // Where push subscriptions and the generated VAPID key pair are stored. Must be persistent: Railway sets
+  // RAILWAY_VOLUME_MOUNT_PATH when a volume is attached.
+  DATA_DIR: process.env.DATA_DIR || process.env.RAILWAY_VOLUME_MOUNT_PATH || './data',
+  // Contact for push services (VAPID "subject"): a mailto: or https: URL.
+  PUSH_SUBJECT: process.env.PUSH_SUBJECT || 'https://nadobot-ui-mgzq.vercel.app',
 };
 
 if (!ENV.PRIVATE_KEY) {

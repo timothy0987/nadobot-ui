@@ -83,27 +83,24 @@ export function useWalletFills(network: NadoNetwork, sender: string | null, prod
  * Turns new bot events and new wallet fills into in-app toasts, plus browser notifications when allowed.
  * Whatever already exists when the page first loads is treated as seen, so opening the dApp never replays history.
  */
-export function useNotifications(bot: BotStatus | null, walletFills: Match[] | null, symbolById: Record<number, string>) {
+export function useNotifications(bot: BotStatus | null, walletFills: Match[] | null, symbolById: Record<number, string>, pushEnabled: boolean) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>('unsupported');
   const seen = useRef<Set<string> | null>(null);
   const seenFills = useRef<Set<string> | null>(null);
-
-  useEffect(() => {
-    setPermission(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
-  }, []);
 
   const push = useCallback((toast: Toast) => {
     setToasts((t) => [toast, ...t].slice(0, 5));
     setTimeout(() => setToasts((t) => t.filter((x) => x.key !== toast.key)), 10_000);
-    if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    // With web push on, the service worker notifies while the tab is hidden; notifying here too would double up.
+    const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    if (!pushEnabled && hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
       try {
         new Notification(toast.title, { body: toast.body, tag: toast.key });
       } catch {
         // Some mobile browsers only allow notifications from a service worker; the in-app toast still shows.
       }
     }
-  }, []);
+  }, [pushEnabled]);
 
   useEffect(() => {
     if (!bot?.events) return;
@@ -150,14 +147,9 @@ export function useNotifications(bot: BotStatus | null, walletFills: Match[] | n
       });
   }, [walletFills, symbolById, push]);
 
-  const requestPermission = useCallback(async () => {
-    if (typeof Notification === 'undefined') return;
-    setPermission(await Notification.requestPermission());
-  }, []);
-
   const dismiss = useCallback((key: string) => setToasts((t) => t.filter((x) => x.key !== key)), []);
 
-  return { toasts, dismiss, permission, requestPermission };
+  return { toasts, dismiss };
 }
 
 export function Toasts({ toasts, dismiss }: { toasts: Toast[]; dismiss: (key: string) => void }) {
@@ -177,4 +169,130 @@ export function Toasts({ toasts, dismiss }: { toasts: Toast[]; dismiss: (key: st
       ))}
     </div>
   );
+}
+
+/* ------------------------------- web push ------------------------------- */
+
+export type PushTopic = 'fills' | 'bot';
+export type PushSupport = 'checking' | 'supported' | 'unsupported' | 'ios-install';
+
+const TOPICS_KEY = 'nadobot:push-topics';
+const botApi = (path: string) => `${BOT_STATUS_URL.replace(/\/$/, '')}${path}`;
+
+function base64UrlToBytes(base64Url: string) {
+  const padded = (base64Url + '='.repeat((4 - (base64Url.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/');
+  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+}
+
+const sameKey = (a: ArrayBuffer | null | undefined, b: Uint8Array) => !!a && a.byteLength === b.byteLength && new Uint8Array(a).every((v, i) => v === b[i]);
+
+async function postBot(path: string, body: unknown) {
+  const res = await fetch(botApi(path), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error ?? `Bot returned ${res.status}`);
+}
+
+/**
+ * Web push: notifications for order fills and bot activity even when the dashboard is closed. The bot on Railway
+ * holds the subscription and sends the pushes; this hook subscribes the browser and keeps the preferences in sync.
+ */
+export function usePush(sender: string | null, chainId: number) {
+  const [support, setSupport] = useState<PushSupport>('checking');
+  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
+  const [topics, setTopicsState] = useState<PushTopic[]>(['fills', 'bot']);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const registration = useRef<ServiceWorkerRegistration | null>(null);
+  const synced = useRef<string>('');
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(TOPICS_KEY) ?? 'null');
+      if (Array.isArray(saved) && saved.length) setTopicsState(saved);
+    } catch {}
+
+    if (!BOT_STATUS_URL || !('serviceWorker' in navigator) || !('PushManager' in window) || typeof Notification === 'undefined') {
+      // iPhone/iPad Safari only exposes push once the site is added to the Home Screen.
+      const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window.matchMedia?.('(display-mode: standalone)').matches);
+      setSupport(ios ? 'ios-install' : 'unsupported');
+      return;
+    }
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then(async (reg) => {
+        registration.current = reg;
+        setSubscription(await reg.pushManager.getSubscription());
+        setSupport('supported');
+      })
+      .catch(() => setSupport('unsupported'));
+  }, []);
+
+  const sync = useCallback(
+    async (sub: PushSubscription, wanted: PushTopic[]) => {
+      const effective = wanted.filter((t) => t !== 'fills' || sender);
+      if (effective.length === 0) throw new Error('Connect a wallet or turn on bot activity to get notifications');
+      await postBot('/push/subscribe', { subscription: sub.toJSON(), subaccount: sender, topics: effective, chainId });
+      synced.current = `${sub.endpoint}|${sender}|${effective.join(',')}|${chainId}`;
+    },
+    [sender, chainId]
+  );
+
+  const enable = useCallback(
+    async (wanted: PushTopic[]) => {
+      if (!registration.current) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') throw new Error('Notifications are blocked for this site in your browser settings');
+        const res = await fetch(botApi('/push/public-key'));
+        const { publicKey } = await res.json();
+        const key = base64UrlToBytes(publicKey);
+
+        let sub = await registration.current.pushManager.getSubscription();
+        // If the bot's key pair changed (e.g. its storage was reset), the old subscription can no longer receive pushes.
+        if (sub && !sameKey(sub.options.applicationServerKey, key)) {
+          await sub.unsubscribe();
+          sub = null;
+        }
+        sub ??= await registration.current.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+        await sync(sub, wanted);
+        setSubscription(sub);
+        setTopicsState(wanted);
+        localStorage.setItem(TOPICS_KEY, JSON.stringify(wanted));
+      } catch (e: any) {
+        setError(e.message);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [sync]
+  );
+
+  const disable = useCallback(async () => {
+    if (!subscription) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await postBot('/push/unsubscribe', { endpoint: subscription.endpoint }).catch(() => {});
+      await subscription.unsubscribe();
+      setSubscription(null);
+      synced.current = '';
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }, [subscription]);
+
+  // Keep the bot pointed at whichever wallet is connected now.
+  useEffect(() => {
+    if (!subscription) return;
+    const effective = topics.filter((t) => t !== 'fills' || sender);
+    const key = `${subscription.endpoint}|${sender}|${effective.join(',')}|${chainId}`;
+    if (key === synced.current || effective.length === 0) return;
+    sync(subscription, topics).catch((e) => setError(e.message));
+  }, [subscription, sender, chainId, topics, sync]);
+
+  return { support, enabled: Boolean(subscription), topics, busy, error, enable, disable };
 }

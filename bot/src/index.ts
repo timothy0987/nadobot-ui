@@ -12,6 +12,7 @@ import { account } from './viem/client';
 import { notify, recordError } from './alerts';
 import { botState } from './state';
 import { startStatusServer } from './status';
+import { initPush, startFillWatcher } from './push/service';
 import { refreshRisk, currentBuyBlock, startRiskLoop } from './trading/risk';
 
 /** Would buying TRADE_AMOUNT more push the position past MAX_POSITION_SIZE? */
@@ -31,6 +32,8 @@ async function main() {
   const productId = await resolveProductId();
   console.log(`Resolved ${ENV.PRODUCT_SYMBOL} -> product_id ${productId}`);
   console.log(`Subaccount: ${sender}`);
+  initPush();
+  startFillWatcher();
   startStatusServer(account.address, sender);
 
   try {

@@ -1,4 +1,5 @@
 import { botState } from './state';
+import { pushBotEvent } from './push/service';
 
 export type EventLevel = 'info' | 'warn' | 'error';
 
@@ -26,10 +27,13 @@ export function appendEvent(events: BotEvent[], level: EventLevel, message: stri
   return [{ id, at: now.toISOString(), level, message, count: 1 }, ...events].slice(0, MAX_EVENTS);
 }
 
-/** Records an alert in the bot's event log. The dApp reads it from GET /status and notifies the user. */
+/** Records an alert in the bot's event log (shown in the dApp) and pushes it to subscribed browsers. */
 export async function notify(message: string, level: EventLevel = 'info') {
   console.log(`${level.toUpperCase()}: ${message}`);
-  botState.events = appendEvent(botState.events, level, message, new Date(), nextId++);
+  const id = nextId++;
+  botState.events = appendEvent(botState.events, level, message, new Date(), id);
+  // A repeat only bumps the existing row's count; push genuinely new events only.
+  if (botState.events[0]?.id === id) await pushBotEvent(level, message);
 }
 
 /** Records the latest error for the status endpoint and logs it to the dApp event feed. */

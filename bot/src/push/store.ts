@@ -1,0 +1,73 @@
+import fs from 'fs';
+import path from 'path';
+import webpush from 'web-push';
+
+export type PushTopic = 'bot' | 'fills';
+
+export interface PushRecord {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+  subaccount: string | null; // wallet subaccount whose fills to announce
+  topics: PushTopic[];
+  createdAt: string;
+  lastSeenSubmissionIdx: string | null;
+}
+
+interface StoreData {
+  vapid: { publicKey: string; privateKey: string };
+  subscriptions: PushRecord[];
+}
+
+/**
+ * Push subscriptions plus the VAPID key pair, persisted as one JSON file. The key pair is generated here on first
+ * run, so the private key never has to be handled by a person. Keep DATA_DIR on a persistent volume: losing it
+ * invalidates every subscription.
+ */
+export class PushStore {
+  private data: StoreData;
+  private readonly file: string;
+
+  constructor(dir: string) {
+    this.file = path.join(dir, 'push.json');
+    fs.mkdirSync(dir, { recursive: true });
+    if (fs.existsSync(this.file)) {
+      this.data = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+    } else {
+      this.data = { vapid: webpush.generateVAPIDKeys(), subscriptions: [] };
+      this.save();
+    }
+  }
+
+  get vapid() {
+    return this.data.vapid;
+  }
+
+  get subscriptions(): readonly PushRecord[] {
+    return this.data.subscriptions;
+  }
+
+  upsert(record: PushRecord) {
+    const i = this.data.subscriptions.findIndex((s) => s.endpoint === record.endpoint);
+    if (i >= 0) this.data.subscriptions[i] = record;
+    else this.data.subscriptions.push(record);
+    this.save();
+  }
+
+  remove(endpoint: string) {
+    const before = this.data.subscriptions.length;
+    this.data.subscriptions = this.data.subscriptions.filter((s) => s.endpoint !== endpoint);
+    if (this.data.subscriptions.length !== before) this.save();
+  }
+
+  setLastSeen(subaccount: string, submissionIdx: string) {
+    for (const s of this.data.subscriptions) if (s.subaccount === subaccount) s.lastSeenSubmissionIdx = submissionIdx;
+    this.save();
+  }
+
+  private save() {
+    // Write-then-rename so a crash mid-write can't leave a truncated file behind.
+    const tmp = `${this.file}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2));
+    fs.renameSync(tmp, this.file);
+  }
+}

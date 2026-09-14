@@ -17,11 +17,13 @@
     "axios": "^1.19.0",
     "dotenv": "^17.4.2",
     "viem": "^2.55.18",
+    "web-push": "^3.6.7",
     "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^26.2.0",
+    "@types/web-push": "^3.6.4",
     "@types/ws": "^8.18.1",
     "jest": "^30.4.2",
     "pm2": "^7.0.3",

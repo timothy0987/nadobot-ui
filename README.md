@@ -70,9 +70,9 @@ Alerts live inside the dApp. No Telegram or other third-party bot is involved.
 
 - **Bot activity:** the dashboard shows the bot's activity feed and pops a notification for each new event.
 - **Your orders:** when a connected wallet's order fills (a plan entry, stop-loss or take-profit), the dashboard shows it with size, price and any realized PnL.
-- **Browser notifications:** click *Enable notifications* on the dashboard to also get system notifications while the dashboard is open in any tab.
+- **Push notifications:** turn them on in the dashboard's *Push notifications* panel to be notified on that device even with the dashboard closed: when your orders fill, and/or about Nadobot activity. The Railway bot stores the subscription, watches Nado for the wallet's fills every 30 seconds, and sends the push. On iPhone/iPad, add the dashboard to the Home Screen first.
 
-The dashboard has to be open (even in a background tab) to notify you. Your plans and the bot keep trading on Nado either way. The bot's activity log lives in memory, so a restart starts it fresh; its trade history always comes from Nado.
+Push needs no secrets from you: the bot generates its VAPID key pair on first start and keeps it, with the subscriptions, in `DATA_DIR`. Put that on a persistent Railway volume, or every redeploy resets subscriptions (the dashboard resubscribes on the next visit). The bot only sends to real browser push services (Google, Mozilla, Apple, Microsoft). The bot's activity log lives in memory, so a restart starts it fresh; its trade history always comes from Nado.
 
 ## Deployment
 
