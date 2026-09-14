@@ -102,7 +102,13 @@ export async function protectOpenPosition(sender: `0x${string}`, productId: numb
 
   const managedDigests = pending.filter(isReduceOnly).map((o) => o.order.digest as `0x${string}`);
 
-  if (action === 'none') return action;
+  if (action === 'none') {
+    // Also covers a restart: correct orders already on Nado must show as protection, not "being placed".
+    botState.protection = plan
+      ? { stopPrice: toNumber(plan.stopPrice), takeProfitPrice: toNumber(plan.takeProfitPrice), size: Math.abs(toNumber(position!.amount)), digests: managedDigests }
+      : null;
+    return action;
+  }
 
   if (action === 'cleanup' || action === 'replace') {
     await cancelTriggerOrders(sender, productId, managedDigests);
