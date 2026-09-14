@@ -366,7 +366,7 @@ button:disabled {
   margin-top: 1rem;
 }
 
-.kv div span {
+.kv > div > span:first-child {
   display: block;
   color: var(--text-secondary);
   font-size: 0.8rem;

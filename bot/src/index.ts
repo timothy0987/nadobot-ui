@@ -12,6 +12,7 @@ import { account } from './viem/client';
 import { notify } from './alerts';
 import { botState, recordError } from './state';
 import { startStatusServer } from './status';
+import { refreshRisk, currentBuyBlock, startRiskLoop } from './trading/risk';
 
 /** Would buying TRADE_AMOUNT more push the position past MAX_POSITION_SIZE? */
 export function exceedsPositionCap(currentAmount: number, tradeAmount: number, maxPositionSize: number) {
@@ -49,6 +50,14 @@ async function main() {
     );
   }
 
+  startRiskLoop(sender);
+  console.log(
+    `Risk controls: kill switch ${ENV.TRADING_PAUSED ? 'ON (no new buys)' : 'off'}, daily loss limit ${
+      ENV.DAILY_LOSS_LIMIT_USD > 0 ? `$${ENV.DAILY_LOSS_LIMIT_USD}` : 'disabled'
+    }`
+  );
+  if (ENV.TRADING_PAUSED) await notify('Kill switch is ON: no new buys. Open positions stay protected.');
+
   if (!ENV.ENABLE_DIP_BUY) {
     console.log('Dip-buy entry strategy disabled (ENABLE_DIP_BUY=false). Running in protection-only mode.');
     return;
@@ -67,6 +76,16 @@ async function main() {
     cooldownUntil = Date.now() + 60_000; // avoid re-triggering on every tick while the order settles
 
     try {
+      // Kill switch and daily loss limit are checked against fresh trade history right before every buy.
+      await refreshRisk(sender);
+      const blocked = currentBuyBlock();
+      if (blocked) {
+        if (botState.lastSkippedBuyReason !== blocked) console.log(`Skipped buy at $${currentPrice.toFixed(2)}: ${blocked}`);
+        botState.lastSkippedBuyReason = blocked;
+        botState.sessionHigh = currentPrice;
+        return;
+      }
+
       const before = await getPerpPosition(sender, productId);
       const beforeAmount = before ? Number(before.amount) / 1e18 : 0;
       if (exceedsPositionCap(beforeAmount, ENV.TRADE_AMOUNT, ENV.MAX_POSITION_SIZE)) {

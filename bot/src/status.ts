@@ -30,6 +30,8 @@ export function startStatusServer(botAddress: string, subaccount: string) {
         entryDropPercent: ENV.TRADE_DROP_PERCENTAGE * 100,
         tradeAmount: ENV.TRADE_AMOUNT,
         maxPositionSize: ENV.MAX_POSITION_SIZE,
+        tradingPaused: ENV.TRADING_PAUSED,
+        dailyLossLimitUsd: ENV.DAILY_LOSS_LIMIT_USD,
         protectionEnabled: ENV.ENABLE_POSITION_PROTECTION,
         stopLossPercent: ENV.STOP_LOSS_PERCENT * 100,
         takeProfitPercent: ENV.TAKE_PROFIT_PERCENT * 100,

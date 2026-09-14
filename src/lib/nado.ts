@@ -486,6 +486,8 @@ export interface BotStatus {
     entryDropPercent: number;
     tradeAmount: number;
     maxPositionSize: number;
+    tradingPaused?: boolean;
+    dailyLossLimitUsd?: number;
     protectionEnabled: boolean;
     stopLossPercent: number;
     takeProfitPercent: number;
@@ -501,6 +503,7 @@ export interface BotStatus {
   protection: { stopPrice: number; takeProfitPrice: number; size: number; digests: string[] } | null;
   lastError: { at: string; message: string } | null;
   alertsConfigured: boolean;
+  risk?: { dailyNetPnl: number | null; checkedAt: string | null; buyBlockedReason: string | null };
 }
 
 export async function fetchBotStatus(): Promise<BotStatus> {

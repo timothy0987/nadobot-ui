@@ -12,6 +12,7 @@ const NETWORK_DEFAULTS = isMainnet
       NADO_GATEWAY_URL: 'https://gateway.prod.nado.xyz/v1',
       NADO_SUBSCRIBE_URL: 'wss://gateway.prod.nado.xyz/v1/subscribe',
       NADO_TRIGGER_URL: 'https://trigger.prod.nado.xyz/v1',
+      NADO_ARCHIVE_URL: 'https://archive.prod.nado.xyz/v1',
       EXPLORER_URL: 'https://explorer.inkonchain.com',
     }
   : {
@@ -20,6 +21,7 @@ const NETWORK_DEFAULTS = isMainnet
       NADO_GATEWAY_URL: 'https://gateway.test.nado.xyz/v1',
       NADO_SUBSCRIBE_URL: 'wss://gateway.test.nado.xyz/v1/subscribe',
       NADO_TRIGGER_URL: 'https://trigger.test.nado.xyz/v1',
+      NADO_ARCHIVE_URL: 'https://archive.test.nado.xyz/v1',
       EXPLORER_URL: 'https://explorer-sepolia.inkonchain.com',
     };
 
@@ -34,6 +36,7 @@ export const ENV = {
   NADO_GATEWAY_URL: process.env.NADO_GATEWAY_URL || NETWORK_DEFAULTS.NADO_GATEWAY_URL,
   NADO_SUBSCRIBE_URL: process.env.NADO_SUBSCRIBE_URL || NETWORK_DEFAULTS.NADO_SUBSCRIBE_URL,
   NADO_TRIGGER_URL: process.env.NADO_TRIGGER_URL || NETWORK_DEFAULTS.NADO_TRIGGER_URL,
+  NADO_ARCHIVE_URL: process.env.NADO_ARCHIVE_URL || NETWORK_DEFAULTS.NADO_ARCHIVE_URL,
 
   SUBACCOUNT_NAME: process.env.SUBACCOUNT_NAME || 'default',
   PRODUCT_SYMBOL: process.env.PRODUCT_SYMBOL || 'BTC-PERP',
@@ -47,6 +50,10 @@ export const ENV = {
   TRADE_AMOUNT: parseFloat(process.env.TRADE_AMOUNT || '0.001'),
   // Hard cap on total position size (in base units, e.g. BTC). Dip-buys that would exceed it are skipped.
   MAX_POSITION_SIZE: parseFloat(process.env.MAX_POSITION_SIZE || '0.005'),
+  // Kill switch: true stops all new buys. Stop-loss/take-profit on open positions keeps running.
+  TRADING_PAUSED: (process.env.TRADING_PAUSED ?? 'false') === 'true',
+  // Pause new buys until 00:00 UTC once today's realized PnL minus fees reaches -this many USDT0. 0 disables.
+  DAILY_LOSS_LIMIT_USD: parseFloat(process.env.DAILY_LOSS_LIMIT_USD ?? '25'),
 
   // Exit protection: whenever a position is open (however it was opened) and has no
   // active stop-loss/take-profit trigger orders, attach them automatically.

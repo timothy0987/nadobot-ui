@@ -20,6 +20,8 @@ All three live on Nado's servers, so the plan runs whether or not the dashboard 
 
 - **Entry:** buys `TRADE_AMOUNT` when price drops `TRADE_DROP_PERCENTAGE` below its session high, never past `MAX_POSITION_SIZE`.
 - **Protection:** keeps exactly one stop-loss and one take-profit on any open position, bot-opened or manual. They are resized whenever the position grows or its average entry moves, and cleaned up once it closes. Only reduce-only orders are touched, so a trader's own orders are left alone.
+- **Kill switch:** set `TRADING_PAUSED=true` in Railway to stop all new buys at once. Open positions stay protected.
+- **Daily loss limit:** once today's realized PnL minus fees reaches -`DAILY_LOSS_LIMIT_USD` (default $25), new buys pause until 00:00 UTC. It is computed from Nado's own trade history, so a restart can't reset it, and buys pause if that history can't be read. It counts realized losses; an open position's unrealized loss is capped by its stop-loss instead.
 - **Status:** `GET /status` serves read-only JSON (strategy, position, protection, last error) that the dashboard displays.
 - **Alerts:** optional Telegram and/or Discord messages on buys, protection changes, closed positions and errors.
 

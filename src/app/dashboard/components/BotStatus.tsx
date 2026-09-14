@@ -116,9 +116,24 @@ export function BotStatus() {
               <span>Alerts</span>
               {status.alertsConfigured ? 'Telegram/Discord on' : 'Not configured'}
             </div>
+            <div>
+              <span>Today (UTC) · loss limit</span>
+              <b style={{ fontWeight: 'inherit', color: (status.risk?.dailyNetPnl ?? 0) < 0 ? 'var(--danger)' : 'var(--success)' }}>
+                {status.risk?.dailyNetPnl == null ? '—' : `${status.risk.dailyNetPnl < 0 ? '-' : ''}${usd(Math.abs(status.risk.dailyNetPnl))}`}
+              </b>
+              {' · '}
+              {status.strategy.dailyLossLimitUsd ? usd(status.strategy.dailyLossLimitUsd) : 'off'}
+            </div>
+            <div>
+              <span>New buys</span>
+              {status.risk?.buyBlockedReason ? <span className="pill bad">Paused</span> : <span className="pill good">Allowed</span>}
+            </div>
           </div>
 
-          {status.lastSkippedBuyReason && <div className="notice">{status.lastSkippedBuyReason}</div>}
+          {status.risk?.buyBlockedReason && <div className="notice error">{status.risk.buyBlockedReason}</div>}
+          {status.lastSkippedBuyReason && status.lastSkippedBuyReason !== status.risk?.buyBlockedReason && (
+            <div className="notice">{status.lastSkippedBuyReason}</div>
+          )}
           {status.lastError && (
             <div className="notice error">
               Last error {ago(status.lastError.at)}: {status.lastError.message}

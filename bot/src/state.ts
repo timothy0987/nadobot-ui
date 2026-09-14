@@ -9,6 +9,11 @@ export const botState = {
   position: null as null | { amount: number; avgEntryPrice: number },
   protection: null as null | { stopPrice: number; takeProfitPrice: number; size: number; digests: string[] },
   lastError: null as null | { at: string; message: string },
+  risk: {
+    dailyNetPnl: null as number | null, // realized PnL minus fees since 00:00 UTC, all products
+    checkedAt: null as string | null,
+    buyBlockedReason: null as string | null,
+  },
 };
 
 export function recordError(message: string) {
