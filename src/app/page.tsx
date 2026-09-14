@@ -4,9 +4,10 @@ export default function Home() {
   return (
     <main className="container">
       <section className="hero">
+        <span className="pill" style={{ marginBottom: '1.25rem' }}>Independent tool · not affiliated with Nado</span>
         <h1>
-          Trade smarter on the <br />
-          <span className="text-gradient">Nado Orderbook</span>
+          Keep trading on Nado <br />
+          <span className="text-gradient">while you&apos;re offline</span>
         </h1>
         <p className="subtitle">
           Set your entry, stop-loss and take-profit once. Nadobot turns them into orders that run on Nado while you&apos;re offline, signed by your own wallet, so no one else ever holds your keys.

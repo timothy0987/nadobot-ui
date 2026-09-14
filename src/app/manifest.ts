@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'Nadobot',
     short_name: 'Nadobot',
-    description: 'Trade plans on Nado that keep running while you are offline.',
+    description: 'Independent tool (not affiliated with Nado): trade plans that keep running while you are offline.',
     start_url: '/dashboard',
     display: 'standalone',
     background_color: '#0f1115',

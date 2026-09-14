@@ -109,6 +109,10 @@ export default function Dashboard() {
           <p className="muted" style={{ marginTop: '0.5rem' }}>
             Connect an EVM wallet on Ink to create trade plans that keep running on Nado while you&apos;re offline.
           </p>
+          <p className="muted" style={{ marginTop: '0.75rem', fontSize: '0.85rem' }}>
+            You&apos;ll only ever be asked to sign Nado order messages. Nadobot never requests token approvals, transfers or
+            transactions.
+          </p>
         </div>
       ) : (
         <>

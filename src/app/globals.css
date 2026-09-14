@@ -466,3 +466,28 @@ button:disabled {
 .activity li.error .activity-dot {
   background: var(--danger);
 }
+
+/* Site footer: independence + signing disclaimer */
+.site-footer {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  padding-bottom: 2.5rem;
+  border-top: 1px solid var(--glass-border);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+.site-footer p + p {
+  margin-top: 0.6rem;
+}
+
+.site-footer a {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.site-footer code {
+  font-size: 0.8rem;
+}

@@ -34,7 +34,7 @@ const inkMainnet = {
 
 // Testnet listed first: this dashboard defaults to Nado testnet while the bot is being validated.
 const config = getDefaultConfig({
-  appName: 'Nadobot Dashboard',
+  appName: 'Nadobot (independent tool)',
   projectId: '1f440a349bc9842f1fbf8efdb286dfdb', // Demo project ID
   chains: [inkSepolia, inkMainnet],
   ssr: true,

@@ -1,5 +1,7 @@
 # Nadobot
 
+> **Independent, unofficial tool.** Nadobot is built on Nado's public API and is not affiliated with, endorsed by, or operated by Nado. The official Nado app is [app.nado.xyz](https://app.nado.xyz). Nadobot never asks for token approvals, transfers or on-chain transactions; the only wallet requests are signed Nado messages (`Order`, `Cancellation`, `ListTriggerOrders`).
+
 Trading automation for [Nado](https://www.nado.xyz), the unified spot/perps orderbook DEX on Ink L2. Two parts in this repo:
 
 - **Dashboard** (repo root, Next.js, deployed on Vercel) - any trader connects their wallet and creates **trade plans** that keep running while they are offline.
