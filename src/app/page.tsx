@@ -9,15 +9,15 @@ export default function Home() {
           <span className="text-gradient">Nado Orderbook</span>
         </h1>
         <p className="subtitle">
-          The ultimate automated trading companion for the Nado DEX on Ink L2. Deploy powerful strategies, earn Season 2 points, and collect protocol rebates.
+          Set your entry, stop-loss and take-profit once. Nadobot turns them into orders that run on Nado while you&apos;re offline, signed by your own wallet, so no one else ever holds your keys.
         </p>
         
         <div className="btn-group">
           <Link href="/dashboard" className="btn btn-primary">
-            Connect Wallet
+            Launch App
           </Link>
-          <a href="https://github.com/timothy0987/nadobot" target="_blank" rel="noreferrer" className="btn btn-secondary">
-            View Bot Source
+          <a href="https://github.com/timothy0987/nadobot-ui" target="_blank" rel="noreferrer" className="btn btn-secondary">
+            View Source
           </a>
         </div>
 
@@ -26,24 +26,24 @@ export default function Home() {
             <div className="icon-wrapper">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
             </div>
-            <h3>High-Frequency Strategies</h3>
-            <p>Our off-chain sequencer integration allows you to execute EIP-712 signed limit orders with under 15ms latency.</p>
+            <h3>Trade while offline</h3>
+            <p>Trade plans live on Nado&apos;s own servers: your entry rests on the orderbook, and your exits wake up the moment it fills.</p>
           </div>
           
           <div className="feature-card glass">
             <div className="icon-wrapper">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
             </div>
-            <h3>Season 2 Rewards</h3>
-            <p>Automatically accrue points by maintaining maker liquidity and driving volume to the protocol.</p>
+            <h3>Never custodial</h3>
+            <p>Every order is signed in your wallet. Nadobot never holds a key that can move or withdraw your funds.</p>
           </div>
           
           <div className="feature-card glass">
             <div className="icon-wrapper">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
             </div>
-            <h3>Builder Code Rebates</h3>
-            <p>We automatically attach builder appendages to your orders, splitting fee rebates directly with you.</p>
+            <h3>Protection built in</h3>
+            <p>Every plan comes with a stop-loss and take-profit, and cancelling the entry cancels its exits automatically.</p>
           </div>
         </div>
       </section>
