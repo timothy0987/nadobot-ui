@@ -7,6 +7,7 @@ import {
   fetchEndpointAddress,
   ORDER_TYPES,
   LIST_TRIGGER_ORDERS_TYPES,
+  CANCELLATION_TYPES,
 } from '../nado/domain';
 import { encodeAppendix, TriggerType, OrderType } from '../nado/appendix';
 import { buildNonce } from './order';
@@ -118,5 +119,46 @@ export async function listTriggerOrders(sender: `0x${string}`, productIds?: numb
   if (response.data.status !== 'success') {
     throw new Error(`List trigger orders failed: ${response.data.error}`);
   }
-  return response.data.orders as any[];
+  // The docs' field table shows `orders` at the top level, but the live service nests it under `data`.
+  return response.data.data.orders as TriggerOrderEntry[];
+}
+
+export interface TriggerOrderEntry {
+  order: {
+    order: { sender: string; priceX18: string; amount: string; expiration: string; nonce: string; appendix: string };
+    product_id: number;
+    trigger: unknown;
+    digest: string;
+  };
+  status: unknown;
+  placed_at: number;
+  updated_at: number;
+}
+
+/** Cancels specific pending trigger orders by digest, leaving any other trigger orders on the account alone. */
+export async function cancelTriggerOrders(sender: `0x${string}`, productId: number, digests: `0x${string}`[]) {
+  if (!account) throw new Error('Wallet account not initialized. Check PRIVATE_KEY.');
+  if (digests.length === 0) return;
+
+  const productIds = digests.map(() => productId);
+  const tx = { sender, productIds, digests, nonce: buildNonce(60_000) };
+  const signature = await account.signTypedData({
+    domain: nadoDomain(await fetchEndpointAddress()),
+    types: CANCELLATION_TYPES,
+    primaryType: 'Cancellation',
+    message: tx,
+  });
+
+  const payload = {
+    cancel_orders: {
+      tx: { sender, productIds, digests, nonce: tx.nonce.toString() },
+      signature,
+    },
+  };
+
+  const response = await axios.post(`${ENV.NADO_TRIGGER_URL}/execute`, payload, { headers });
+  if (response.data.status !== 'success') {
+    throw new Error(`Cancel trigger orders rejected: ${response.data.error} (${response.data.error_code})`);
+  }
+  return response.data;
 }

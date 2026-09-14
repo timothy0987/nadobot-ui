@@ -45,6 +45,8 @@ export const ENV = {
   ENABLE_DIP_BUY: (process.env.ENABLE_DIP_BUY ?? 'true') === 'true',
   TRADE_DROP_PERCENTAGE: parseFloat(process.env.TRADE_DROP_PERCENTAGE || '0.05'),
   TRADE_AMOUNT: parseFloat(process.env.TRADE_AMOUNT || '0.001'),
+  // Hard cap on total position size (in base units, e.g. BTC). Dip-buys that would exceed it are skipped.
+  MAX_POSITION_SIZE: parseFloat(process.env.MAX_POSITION_SIZE || '0.005'),
 
   // Exit protection: whenever a position is open (however it was opened) and has no
   // active stop-loss/take-profit trigger orders, attach them automatically.
@@ -52,6 +54,14 @@ export const ENV = {
   STOP_LOSS_PERCENT: parseFloat(process.env.STOP_LOSS_PERCENT || '0.05'),
   TAKE_PROFIT_PERCENT: parseFloat(process.env.TAKE_PROFIT_PERCENT || '0.10'),
   PROTECTION_CHECK_INTERVAL_SECONDS: parseInt(process.env.PROTECTION_CHECK_INTERVAL_SECONDS || '30', 10),
+
+  // Optional alerts. Leave unset to disable.
+  TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
+  TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '',
+  DISCORD_WEBHOOK_URL: process.env.DISCORD_WEBHOOK_URL || '',
+
+  // Read-only JSON status endpoint for the dashboard. Railway injects PORT automatically.
+  PORT: parseInt(process.env.PORT || '8080', 10),
 };
 
 if (!ENV.PRIVATE_KEY) {

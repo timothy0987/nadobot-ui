@@ -1,12 +1,22 @@
 import { startPriceFeedListener, priceX18ToNumber } from './ws/priceFeed';
 import { placeOrder } from './trading/order';
 import { getSubaccountInfo, getOpenOrders } from './trading/query';
-import { resolveProductId } from './trading/products';
+import { resolveProductId, getProductIncrements } from './trading/products';
+import { roundToIncrement } from './nado/ticks';
+import { getPerpPosition } from './trading/position';
 import { startPositionProtectionLoop } from './trading/protect';
 import { subaccountToBytes32 } from './nado/subaccount';
 import { OrderType } from './nado/appendix';
 import { ENV } from './config/env';
 import { account } from './viem/client';
+import { notify } from './alerts';
+import { botState, recordError } from './state';
+import { startStatusServer } from './status';
+
+/** Would buying TRADE_AMOUNT more push the position past MAX_POSITION_SIZE? */
+export function exceedsPositionCap(currentAmount: number, tradeAmount: number, maxPositionSize: number) {
+  return Math.abs(currentAmount + tradeAmount) > maxPositionSize + 1e-12;
+}
 
 async function main() {
   console.log(`Starting Nado Trading Bot on ${ENV.NADO_ENV.toUpperCase()} (${ENV.PRODUCT_SYMBOL})...`);
@@ -20,6 +30,7 @@ async function main() {
   const productId = await resolveProductId();
   console.log(`Resolved ${ENV.PRODUCT_SYMBOL} -> product_id ${productId}`);
   console.log(`Subaccount: ${sender}`);
+  startStatusServer(account.address, sender);
 
   try {
     const info = await getSubaccountInfo(sender);
@@ -31,8 +42,6 @@ async function main() {
     console.error('Failed to fetch info on startup:', error);
   }
 
-  // Keeps any open position (whether opened by this bot or manually) protected with a
-  // server-side stop-loss/take-profit even if this process goes offline.
   if (ENV.ENABLE_POSITION_PROTECTION) {
     startPositionProtectionLoop(sender, productId);
     console.log(
@@ -44,35 +53,66 @@ async function main() {
     console.log('Dip-buy entry strategy disabled (ENABLE_DIP_BUY=false). Running in protection-only mode.');
     return;
   }
+  console.log(`Dip-buy active: buy ${ENV.TRADE_AMOUNT} on a ${ENV.TRADE_DROP_PERCENTAGE * 100}% drop, max position ${ENV.MAX_POSITION_SIZE}`);
 
-  let maxPrice = 0;
   let cooldownUntil = 0;
 
   startPriceFeedListener(productId, async (trade) => {
     const currentPrice = priceX18ToNumber(trade.price);
-    if (currentPrice > maxPrice) maxPrice = currentPrice;
+    botState.lastPrice = currentPrice;
+    if (currentPrice > botState.sessionHigh) botState.sessionHigh = currentPrice;
 
-    const dropThreshold = maxPrice * (1 - ENV.TRADE_DROP_PERCENTAGE);
+    const dropThreshold = botState.sessionHigh * (1 - ENV.TRADE_DROP_PERCENTAGE);
     if (currentPrice > dropThreshold || Date.now() < cooldownUntil) return;
-
-    console.log(`Price dropped to ${currentPrice} (max was ${maxPrice}). Placing buy order...`);
     cooldownUntil = Date.now() + 60_000; // avoid re-triggering on every tick while the order settles
 
     try {
+      const before = await getPerpPosition(sender, productId);
+      const beforeAmount = before ? Number(before.amount) / 1e18 : 0;
+      if (exceedsPositionCap(beforeAmount, ENV.TRADE_AMOUNT, ENV.MAX_POSITION_SIZE)) {
+        const reason = `Skipped buy at $${currentPrice.toFixed(2)}: position ${beforeAmount} + ${ENV.TRADE_AMOUNT} would exceed cap ${ENV.MAX_POSITION_SIZE}`;
+        if (botState.lastSkippedBuyReason === null) await notify(reason);
+        botState.lastSkippedBuyReason = reason;
+        console.log(reason);
+        botState.sessionHigh = currentPrice;
+        return;
+      }
+      botState.lastSkippedBuyReason = null;
+
+      console.log(`Price dropped to ${currentPrice} (high was ${botState.sessionHigh}). Placing buy order...`);
       // Willing to pay up to 0.2% above the observed price so the IOC buy actually fills as taker.
-      const limitPrice = BigInt(Math.floor(currentPrice * 1.002 * 1e18));
+      // Nado rejects prices/sizes that aren't exact multiples of the product's tick and lot size.
+      const { priceIncrementX18, sizeIncrementX18 } = await getProductIncrements();
+      const limitPrice = roundToIncrement(BigInt(Math.floor(currentPrice * 1.002 * 1e6)) * 10n ** 12n, priceIncrementX18, 'up');
+      const amount = roundToIncrement(BigInt(Math.round(ENV.TRADE_AMOUNT * 1e9)) * 10n ** 9n, sizeIncrementX18, 'down');
       await placeOrder({
         productId,
         sender,
         priceX18: limitPrice,
-        amount: BigInt(Math.floor(ENV.TRADE_AMOUNT * 1e18)),
+        amount,
         appendix: { orderType: OrderType.IOC },
       });
-      maxPrice = currentPrice; // reset so we don't immediately re-trigger
-    } catch (e) {
-      console.error('Error executing trade:', e);
+      botState.sessionHigh = currentPrice; // reset so we don't immediately re-trigger
+
+      await new Promise((r) => setTimeout(r, 3000));
+      const after = await getPerpPosition(sender, productId);
+      const afterAmount = after ? Number(after.amount) / 1e18 : 0;
+      const filled = afterAmount - beforeAmount;
+      if (filled > 0) {
+        botState.lastBuyAt = new Date().toISOString();
+        await notify(`Bought ${filled.toFixed(6)} ${ENV.PRODUCT_SYMBOL} near $${currentPrice.toFixed(2)} (position now ${afterAmount.toFixed(6)}).`);
+      } else {
+        console.log('Buy order was not filled (IOC expired without a match).');
+      }
+    } catch (e: any) {
+      const message = e.response?.data?.error ?? e.message;
+      console.error('Error executing trade:', message);
+      recordError(`trade: ${message}`);
+      await notify(`Buy attempt failed: ${message}`);
     }
   });
 }
 
-main().catch(console.error);
+if (require.main === module) {
+  main().catch(console.error);
+}

@@ -12,6 +12,7 @@ interface SymbolInfo {
 }
 
 let cachedProductId: number | null = null;
+let cachedIncrements: { priceIncrementX18: bigint; sizeIncrementX18: bigint } | null = null;
 
 const gatewayHeaders = { 'Accept-Encoding': 'gzip, br, deflate' };
 
@@ -40,5 +41,12 @@ export async function resolveProductId(): Promise<number> {
   }
 
   cachedProductId = info.product_id;
+  cachedIncrements = { priceIncrementX18: BigInt(info.price_increment_x18), sizeIncrementX18: BigInt(info.size_increment) };
   return info.product_id;
+}
+
+/** Tick size and lot size for ENV.PRODUCT_SYMBOL. Resolved together with the product id. */
+export async function getProductIncrements() {
+  if (!cachedIncrements) await resolveProductId();
+  return cachedIncrements!;
 }
