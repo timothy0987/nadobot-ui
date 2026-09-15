@@ -30,6 +30,7 @@ All three live on Nado's servers, so the plan runs whether or not the dashboard 
 The connected wallet's trading on Nado, across every market and every app it trades from. It's all public gateway and indexer data, so it needs no signature.
 
 - **Open positions** at Nado's oracle (mark) price: entry, value, unrealized PnL and funding. Sizes come from the gateway, so a fresh fill shows up before the indexer catches up.
+- **Close or trim in one click**: 25%, 50% or all of a position, as an IOC reduce-only order capped 1% past the touch, after a confirmation showing the exact size, value and worst fill price. Partial closes round down to whole lots and are refused below the market minimum order.
 - **History** of closed positions: entry → exit, time held, fees plus funding, and net PnL. Older pages load on demand.
 - **24h / 7d / 30d**: realized PnL after fees, volume, fill count and maker share, plus lifetime volume. A chart shows volume per hour (24h) or per day, with cumulative realized PnL over it.
 - With `NEXT_PUBLIC_BUILDER_ID` set, **Via Nadobot** shows how much of the wallet's volume carried the builder code, read from each filled order's appendix.

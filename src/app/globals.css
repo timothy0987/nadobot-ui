@@ -1121,3 +1121,17 @@ button:disabled {
   flex-wrap: wrap;
   gap: 0.4rem 1.25rem;
 }
+
+/* Close position controls */
+.close-buttons {
+  display: inline-flex;
+  gap: 0.35rem;
+}
+
+.close-confirm {
+  border-color: var(--accent-color);
+}
+
+.close-confirm p + p {
+  margin-top: 0.4rem;
+}

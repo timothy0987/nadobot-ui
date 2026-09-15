@@ -312,6 +312,11 @@ export default function HowItWorks() {
                 <strong>Open positions</strong> at Nado&apos;s mark price: entry, value, unrealized PnL and funding.
               </li>
               <li>
+                <strong>Close or trim</strong>: close 25%, 50% or all of any position at the current price, in one signature. You confirm the
+                exact size and the worst price it can fill at first. The order can only reduce the position, and is cancelled if it
+                can&apos;t fill within 1% of the market.
+              </li>
+              <li>
                 <strong>History</strong> of closed positions: entry and exit prices, time held, fees plus funding, and net PnL.
               </li>
               <li>

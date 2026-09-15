@@ -211,7 +211,16 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {onSupportedChain && exists !== false && <PortfolioPanel network={network} sender={sender} symbols={symbols} />}
+          {onSupportedChain && exists !== false && <PortfolioPanel
+              network={network}
+              sign={sign}
+              sender={sender}
+              symbols={symbols}
+              onClosed={() => {
+                setOrdersRefreshKey((k) => k + 1);
+                refresh();
+              }}
+            />}
 
           {product && onSupportedChain && (
             <MainnetGate network={network}>

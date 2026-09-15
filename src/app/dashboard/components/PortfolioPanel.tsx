@@ -4,14 +4,19 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BUILDER_ID,
   buildOpenPositions,
+  closePosition,
+  CLOSE_SLIPPAGE_PERCENT,
+  fetchMarketPrice,
   fetchFillsSince,
   fetchLifetimeVolume,
   fetchOraclePrices,
   fetchPositions,
   fetchSubaccountInfo,
   formatPrice,
+  fromX18,
   liquidationPrice,
   parseAccountRisk,
+  planClose,
   positionNetPnl,
   summarizeFills,
   type Match,
@@ -20,12 +25,24 @@ import {
   type PnlBucket,
   type PositionRecord,
   type ProductSymbol,
+  type SignTypedDataAsync,
 } from '@/lib/nado';
 
 interface Props {
   network: NadoNetwork;
+  sign: SignTypedDataAsync;
   sender: `0x${string}`;
   symbols: Record<string, ProductSymbol>;
+  /** Called after a position is closed, so the rest of the dashboard can refresh. */
+  onClosed: () => void;
+}
+
+/** A close the trader has asked for but not yet signed. */
+interface PendingClose {
+  productId: number;
+  fraction: number;
+  amount: bigint;
+  symbol: string;
 }
 
 type Range = '24h' | '7d' | '30d';
@@ -50,7 +67,7 @@ function duration(seconds: number) {
  * The connected wallet's trading on Nado: open positions at the mark, closed position history, and PnL and volume
  * over time. Everything here is public indexer and gateway data, so it needs no wallet signature.
  */
-export function PortfolioPanel({ network, sender, symbols }: Props) {
+export function PortfolioPanel({ network, sign, sender, symbols, onClosed }: Props) {
   const [range, setRange] = useState<Range>('7d');
   const [tab, setTab] = useState<'open' | 'history'>('open');
   const [open, setOpen] = useState<(OpenPositionView & { liquidationPrice: number | null })[] | null>(null);
@@ -59,6 +76,10 @@ export function PortfolioPanel({ network, sender, symbols }: Props) {
   const [history, setHistory] = useState<{ positions: PositionRecord[]; nextIdx: string | null } | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingClose | null>(null);
+  const [quote, setQuote] = useState<{ bid: number; ask: number } | null>(null);
+  const [closing, setClosing] = useState(false);
+  const [closeResult, setCloseResult] = useState<{ ok: boolean; text: string } | null>(null);
 
   const bySymbolId = Object.fromEntries(Object.values(symbols).map((s) => [s.product_id, s]));
   const name = (productId: number) => bySymbolId[productId]?.symbol ?? `Market ${productId}`;
@@ -72,6 +93,8 @@ export function PortfolioPanel({ network, sender, symbols }: Props) {
     setLifetime(null);
     setHistory(null);
     setError(null);
+    setPending(null);
+    setCloseResult(null);
   }, [network, sender]);
 
   const loadOpen = useCallback(async () => {
@@ -120,6 +143,37 @@ export function PortfolioPanel({ network, sender, symbols }: Props) {
     const id = setInterval(loadActivity, 60_000);
     return () => clearInterval(id);
   }, [loadActivity]);
+
+  // The quote is fetched when a close is requested, so the confirmation shows the price it would fill near.
+  async function askToClose(p: OpenPositionView, fraction: number) {
+    setCloseResult(null);
+    setQuote(null);
+    setPending({ productId: p.productId, fraction, amount: p.amountX18, symbol: name(p.productId) });
+    try {
+      setQuote(await fetchMarketPrice(network, p.productId));
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  async function confirmClose(plan: ReturnType<typeof planClose>) {
+    if (!pending) return;
+    setClosing(true);
+    try {
+      await closePosition(network, sign, { productId: pending.productId, sender, plan });
+      setPending(null);
+      setCloseResult({ ok: true, text: `Closing order sent for ${pending.symbol}. It fills immediately or is cancelled.` });
+      setTimeout(() => {
+        loadOpen();
+        loadActivity();
+        onClosed();
+      }, 2500);
+    } catch (e: any) {
+      setCloseResult({ ok: false, text: `Could not close: ${e.shortMessage ?? e.message}` });
+    } finally {
+      setClosing(false);
+    }
+  }
 
   async function loadMore() {
     if (!history?.nextIdx) return;
@@ -204,6 +258,61 @@ export function PortfolioPanel({ network, sender, symbols }: Props) {
         </button>
       </div>
 
+      {closeResult && <div className={`notice ${closeResult.ok ? 'success' : 'error'}`}>{closeResult.text}</div>}
+
+      {pending &&
+        (() => {
+          const product = bySymbolId[pending.productId];
+          const plan =
+            quote && product
+              ? planClose({
+                  positionAmount: pending.amount,
+                  fraction: pending.fraction,
+                  bid: quote.bid,
+                  ask: quote.ask,
+                  priceIncrementX18: BigInt(product.price_increment_x18),
+                  sizeIncrementX18: BigInt(product.size_increment),
+                  minOrderValueX18: BigInt(product.min_size),
+                })
+              : null;
+          const closingLong = pending.amount > 0n;
+          const share = plan ? Math.round(plan.fractionClosed * 100) : 0;
+          return (
+            <div className="notice close-confirm">
+              {!plan ? (
+                <span className="muted">Checking the {pending.symbol} price…</span>
+              ) : (
+                <>
+                  <p>
+                    <strong>
+                      {closingLong ? 'Sell' : 'Buy'} {Math.abs(fromX18(plan.amount))} {pending.symbol.replace('-PERP', '')}
+                    </strong>{' '}
+                    to close {share}% of your position, about {usd(plan.notional)} at the current price.
+                  </p>
+                  <p className="muted">
+                    Fills straight away at no worse than {priceOf(pending.productId)(fromX18(plan.limitPriceX18))} ({CLOSE_SLIPPAGE_PERCENT}% past
+                    the {closingLong ? 'bid' : 'ask'}), or is cancelled. It can only reduce your position, never open one the other way. One
+                    signature.
+                  </p>
+                  {plan.errors.map((e) => (
+                    <div key={e} className="notice error">
+                      {e}
+                    </div>
+                  ))}
+                  <div className="form-row">
+                    <button className="btn btn-primary btn-sm" disabled={closing || plan.errors.length > 0} onClick={() => confirmClose(plan)}>
+                      {closing ? 'Confirm in your wallet…' : `Close ${share}% now`}
+                    </button>
+                    <button className="btn btn-secondary btn-sm" disabled={closing} onClick={() => setPending(null)}>
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          );
+        })()}
+
       {tab === 'open' ? (
         open === null ? (
           <p className="muted" style={{ marginTop: '1rem' }}>Loading positions…</p>
@@ -223,6 +332,7 @@ export function PortfolioPanel({ network, sender, symbols }: Props) {
                   <th>Unrealized PnL</th>
                   <th>Est. liq. price</th>
                   <th>Funding</th>
+                  <th>Close</th>
                 </tr>
               </thead>
               <tbody>
@@ -239,6 +349,21 @@ export function PortfolioPanel({ network, sender, symbols }: Props) {
                     </td>
                     <td>{p.liquidationPrice === null ? 'None' : priceOf(p.productId)(p.liquidationPrice)}</td>
                     <td style={{ color: pnlColor(p.funding) }}>{signedUsd(p.funding)}</td>
+                    <td>
+                      <span className="close-buttons">
+                        {[0.25, 0.5, 1].map((fraction) => (
+                          <button
+                            key={fraction}
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => askToClose(p, fraction)}
+                            disabled={closing}
+                            title={`Close ${fraction === 1 ? 'the whole position' : `${fraction * 100}% of the position`} at market`}
+                          >
+                            {fraction === 1 ? 'All' : `${fraction * 100}%`}
+                          </button>
+                        ))}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -246,6 +371,7 @@ export function PortfolioPanel({ network, sender, symbols }: Props) {
           </div>
         )
       ) : closed === null ? (
+
         <p className="muted" style={{ marginTop: '1rem' }}>Loading history…</p>
       ) : closed.length === 0 ? (
         <p className="muted" style={{ marginTop: '1rem' }}>No closed positions yet.</p>

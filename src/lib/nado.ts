@@ -1084,6 +1084,8 @@ export interface OpenPositionView {
   productId: number;
   long: boolean;
   size: number;
+  /** Exact signed position size as Nado holds it, for building a closing order. */
+  amountX18: bigint;
   entryPrice: number;
   markPrice: number;
   value: number;
@@ -1114,6 +1116,7 @@ export function buildOpenPositions(subaccountInfo: any, records: PositionRecord[
       productId,
       long,
       size,
+      amountX18: amount,
       entryPrice,
       markPrice,
       value: size * markPrice,
@@ -1368,4 +1371,83 @@ export function sizeForRisk(riskUsd: number, entry: number, stop: number, sizeIn
   const perUnit = Math.abs(entry - stop);
   if (!(riskUsd > 0) || !(perUnit > 0)) return 0;
   return fromX18(roundToIncrement(toX18(riskUsd / perUnit), BigInt(sizeIncrementX18), 'down'));
+}
+
+/* ---------------------------------- closing a position ---------------------------------- */
+
+/** How far past the touch a close is allowed to fill. It is an IOC order, so this is a cap, not a target. */
+export const CLOSE_SLIPPAGE_PERCENT = 1;
+
+export interface ClosePlan {
+  /** Signed amount of the closing order: negative closes a long, positive closes a short. */
+  amount: bigint;
+  limitPriceX18: bigint;
+  /** Value of the closing order at the touch price. */
+  notional: number;
+  /** Share of the position this closes, after rounding to whole lots. */
+  fractionClosed: number;
+  errors: string[];
+}
+
+/**
+ * Pure: turns "close 25% of this position" into an immediate-or-cancel reduce-only order. Closing a long sells into the
+ * bid, closing a short buys from the ask, each with a slippage cap so a thin book can't fill it at any price.
+ */
+export function planClose(p: {
+  positionAmount: bigint;
+  /** 0 to 1; 1 closes the exact position size, leaving nothing behind. */
+  fraction: number;
+  bid: number | null;
+  ask: number | null;
+  slippagePercent?: number;
+  priceIncrementX18: bigint;
+  sizeIncrementX18: bigint;
+  minOrderValueX18: bigint;
+}): ClosePlan {
+  const errors: string[] = [];
+  const isLong = p.positionAmount > 0n;
+  const touch = isLong ? p.bid : p.ask;
+  const slippage = (p.slippagePercent ?? CLOSE_SLIPPAGE_PERCENT) / 100;
+
+  const size = p.positionAmount < 0n ? -p.positionAmount : p.positionAmount;
+  const fraction = Math.min(Math.max(p.fraction, 0), 1);
+  // A full close sends the exact position size; a partial close rounds down to whole lots.
+  const closing =
+    fraction >= 1 ? size : roundToIncrement((size * BigInt(Math.round(fraction * 10_000))) / 10_000n, p.sizeIncrementX18, 'down');
+  const amount = isLong ? -closing : closing;
+
+  if (size === 0n) errors.push('There is no position to close.');
+  else if (closing === 0n) errors.push("That share of the position is smaller than this market's minimum lot size. Close a larger share.");
+
+  const limitPriceX18 = touch
+    ? roundToIncrement(toX18(touch * (isLong ? 1 - slippage : 1 + slippage)), p.priceIncrementX18, isLong ? 'down' : 'up')
+    : 0n;
+  if (!touch) errors.push('No market price available for this market right now.');
+
+  const notional = touch ? fromX18(closing) * touch : 0;
+  if (touch && closing > 0n && toX18(notional) < p.minOrderValueX18) {
+    errors.push(
+      `Closing that share is only about $${notional.toFixed(2)}, below this market's $${fromX18(p.minOrderValueX18)} minimum order. Close a larger share.`
+    );
+  }
+
+  return { amount, limitPriceX18, notional, fractionClosed: size > 0n ? Number((closing * 10_000n) / size) / 10_000 : 0, errors };
+}
+
+/** Places the closing order: one signature, immediate-or-cancel and reduce-only, so it can never flip the position. */
+export async function closePosition(
+  network: NadoNetwork,
+  sign: SignTypedDataAsync,
+  p: { productId: number; sender: `0x${string}`; plan: ClosePlan }
+): Promise<string> {
+  if (p.plan.errors.length) throw new Error(p.plan.errors[0]);
+  return placeOrder(network, sign, {
+    productId: p.productId,
+    sender: p.sender,
+    priceX18: p.plan.limitPriceX18,
+    amount: p.plan.amount,
+    orderType: OrderType.IOC,
+    reduceOnly: true,
+    expiresInSeconds: 60,
+  });
 }
