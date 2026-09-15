@@ -34,8 +34,7 @@ export default function RootLayout({
           {children}
           <footer className="container site-footer">
             <p>
-              <strong>Nadobot is an independent tool.</strong> It is built on Nado&apos;s public API and is not affiliated
-              with, endorsed by, or operated by Nado. The official Nado app is at{' '}
+              <strong>Nadobot is an independent tool built on Nado&apos;s public API.</strong> The official Nado app is at{' '}
               <a href="https://app.nado.xyz" target="_blank" rel="noreferrer">
                 app.nado.xyz
               </a>
