@@ -1135,3 +1135,16 @@ button:disabled {
 .close-confirm p + p {
   margin-top: 0.4rem;
 }
+
+/* Move a stop-loss or take-profit */
+.move-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem 1.5rem;
+  padding: 0.5rem 0 0.75rem;
+}
+
+.move-editor .notice {
+  flex-basis: 100%;
+}

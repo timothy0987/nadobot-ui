@@ -1451,3 +1451,88 @@ export async function closePosition(
     expiresInSeconds: 60,
   });
 }
+
+/* ---------------------------------- moving a stop-loss or take-profit ---------------------------------- */
+
+export interface TriggerEditPlan {
+  triggerX18: bigint;
+  /** Worst price the exit may fill at, EXIT_SLIPPAGE past the trigger in the closing direction. */
+  limitX18: bigint;
+  errors: string[];
+}
+
+/**
+ * Pure: prices a moved exit. `closesLong` is true when the exit sells (protecting a long). `above` keeps the original
+ * condition: an exit that fires when price rises stays that way, it only moves to a new level.
+ */
+export function planTriggerEdit(p: {
+  triggerPrice: number;
+  closesLong: boolean;
+  above: boolean;
+  priceIncrementX18: bigint;
+  /** Last traded price, used to refuse a level that has already been passed. */
+  marketPrice?: number | null;
+}): TriggerEditPlan {
+  const errors: string[] = [];
+  if (!(p.triggerPrice > 0)) errors.push('Enter a trigger price.');
+  const tick = (value: number, mode: RoundMode) => roundToIncrement(toX18(value), p.priceIncrementX18, mode);
+  const triggerX18 = tick(p.triggerPrice, 'nearest');
+  const exitMode: RoundMode = p.closesLong ? 'down' : 'up';
+  const worse = p.closesLong ? 1 - EXIT_SLIPPAGE : 1 + EXIT_SLIPPAGE;
+  const limitX18 = tick(fromX18(triggerX18) * worse, exitMode);
+
+  if (p.triggerPrice > 0 && p.marketPrice) {
+    const level = fromX18(triggerX18);
+    if (p.above ? p.marketPrice >= level : p.marketPrice <= level) {
+      errors.push(
+        `The market is already ${p.above ? 'at or above' : 'at or below'} ${formatPrice(level, p.priceIncrementX18)}, so this would fire straight away. Move it ${p.above ? 'higher' : 'lower'}.`
+      );
+    }
+  }
+  return { triggerX18, limitX18, errors };
+}
+
+export interface TriggerEditResult {
+  digest: string;
+  /** False when the old exit could not be cancelled and is still live alongside the new one. */
+  oldCancelled: boolean;
+}
+
+/**
+ * Moves an exit to a new price: places the replacement first, then cancels the old one. In that order a rejected
+ * second signature leaves the position over-protected rather than unprotected; both are reduce-only, so whichever
+ * fires first closes the position and the other can only be a no-op.
+ */
+export async function replaceTriggerOrder(
+  network: NadoNetwork,
+  sign: SignTypedDataAsync,
+  p: {
+    productId: number;
+    sender: `0x${string}`;
+    oldDigest: string;
+    amount: bigint;
+    plan: TriggerEditPlan;
+    above: boolean;
+    /** Entry this exit waits for, when it hasn't been activated yet. */
+    dependsOn?: string;
+    expiresInSeconds?: number;
+  }
+): Promise<TriggerEditResult> {
+  if (p.plan.errors.length) throw new Error(p.plan.errors[0]);
+  const digest = await placeTriggerOrder(network, sign, {
+    productId: p.productId,
+    sender: p.sender,
+    priceX18: p.plan.limitX18,
+    amount: p.amount,
+    priceRequirement: p.above ? { last_price_above: p.plan.triggerX18.toString() } : { last_price_below: p.plan.triggerX18.toString() },
+    reduceOnly: true,
+    dependsOn: p.dependsOn,
+    expiresInSeconds: p.expiresInSeconds,
+  });
+  try {
+    await cancelOrders(network, sign, 'trigger', p.sender, [{ productId: p.productId, digest: p.oldDigest }]);
+  } catch {
+    return { digest, oldCancelled: false };
+  }
+  return { digest, oldCancelled: true };
+}

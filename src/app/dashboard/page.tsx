@@ -265,7 +265,15 @@ export default function Dashboard() {
                   onPlaced={() => setOrdersRefreshKey((k) => k + 1)}
                 />
               )}
-              <MyOrders network={network} sign={sign} sender={sender} product={product} refreshKey={ordersRefreshKey} />
+              <MyOrders
+                network={network}
+                bid={quote?.bid ?? null}
+                ask={quote?.ask ?? null}
+                sign={sign}
+                sender={sender}
+                product={product}
+                refreshKey={ordersRefreshKey}
+              />
             </MainnetGate>
           )}
         </>

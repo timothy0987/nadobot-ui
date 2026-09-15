@@ -4,6 +4,9 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   cancelLadder,
   cancelOrders,
+  planTriggerEdit,
+  priceInputValue,
+  replaceTriggerOrder,
   fetchOpenOrders,
   formatPrice,
   fromX18,
@@ -19,6 +22,8 @@ import { ladderRoles, type SavedLadder } from './LadderForm';
 
 interface Props {
   network: NadoNetwork;
+  bid: number | null;
+  ask: number | null;
   sign: SignTypedDataAsync;
   sender: `0x${string}`;
   product: ProductSymbol;
@@ -37,6 +42,8 @@ interface Row {
   linkedTo?: string;
   /** Set on a ladder's first entry: cancelling it alone would strip the exits from the deeper entries. */
   ladder?: SavedLadder;
+  /** Present on a stop-loss or take-profit: what is needed to re-place it at another price. */
+  movable?: { amount: bigint; above: boolean; triggerPrice: number; dependsOn?: string };
 }
 
 
@@ -49,7 +56,7 @@ function triggerStatus(status: unknown) {
   return typeof status === 'string' ? status.replace(/_/g, ' ') : 'Active';
 }
 
-function describeTrigger(t: TriggerOrderEntry, tick: string): Pick<Row, 'kind' | 'price' | 'linkedTo'> {
+function describeTrigger(t: TriggerOrderEntry, tick: string): Pick<Row, 'kind' | 'price' | 'linkedTo' | 'movable'> {
   if (t.order.trigger?.time_trigger) {
     const { executions, intervalSeconds } = describeTwap(t);
     const every = intervalSeconds < 3600 ? `${Math.round(intervalSeconds / 60)} min` : `${(intervalSeconds / 3600).toFixed(1)} h`;
@@ -66,18 +73,25 @@ function describeTrigger(t: TriggerOrderEntry, tick: string): Pick<Row, 'kind' |
     const closingLong = amount < 0n;
     kind = closingLong === above ? 'Take-profit' : 'Stop-loss';
   }
+  const dependsOn = t.order.trigger?.price_trigger?.dependency?.digest;
   return {
     kind,
     price: `${above ? '≥' : '≤'} ${formatPrice(fromX18(value), tick)}`,
-    linkedTo: t.order.trigger?.price_trigger?.dependency?.digest,
+    linkedTo: dependsOn,
+    // Only exits can be moved: a conditional order that opens a position would change its own meaning.
+    movable: isReduceOnly(t.order.order.appendix) ? { amount, above, triggerPrice: fromX18(value), dependsOn } : undefined,
   };
 }
 
-export function MyOrders({ network, sign, sender, product, refreshKey }: Props) {
+export function MyOrders({ network, bid, ask, sign, sender, product, refreshKey }: Props) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [moving, setMoving] = useState<{ digest: string; price: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
+  const market = bid && ask ? (bid + ask) / 2 : null;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -135,6 +149,39 @@ export function MyOrders({ network, sign, sender, product, refreshKey }: Props) 
     if (refreshKey > 0) load();
   }, [refreshKey, load]);
 
+  /** Places the exit at its new price before cancelling the old one, so the position is never left unprotected. */
+  async function move(row: Row, plan: ReturnType<typeof planTriggerEdit>) {
+    if (!row.movable) return;
+    setSaving(true);
+    setNotice(null);
+    try {
+      const result = await replaceTriggerOrder(network, sign, {
+        productId: product.product_id,
+        sender,
+        oldDigest: row.digest,
+        amount: row.movable.amount,
+        plan,
+        above: row.movable.above,
+        dependsOn: row.movable.dependsOn,
+      });
+      setMoving(null);
+      setNotice(
+        result.oldCancelled
+          ? { ok: true, text: `${row.kind} moved. The old one has been cancelled.` }
+          : {
+              ok: false,
+              text: `The new ${row.kind.toLowerCase()} is live, but the old one could not be cancelled. Cancel it below so you don't hold two.`,
+            }
+      );
+      await new Promise((r) => setTimeout(r, 2500));
+      await load();
+    } catch (e: any) {
+      setNotice({ ok: false, text: `Could not move it: ${e.shortMessage ?? e.message}` });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function cancel(row: Row) {
     setCancelling(row.digest);
     setError(null);
@@ -166,6 +213,7 @@ export function MyOrders({ network, sign, sender, product, refreshKey }: Props) 
       </div>
 
       {error && <div className="notice error">{error}</div>}
+      {notice && <div className={`notice ${notice.ok ? 'success' : 'error'}`}>{notice.text}</div>}
 
       {rows && rows.length === 0 && <p className="muted">No open orders or plans on {product.symbol}.</p>}
 
@@ -183,7 +231,7 @@ export function MyOrders({ network, sign, sender, product, refreshKey }: Props) 
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {rows.flatMap((row) => [
                 <tr key={row.key}>
                   <td>
                     {row.kind}
@@ -194,16 +242,110 @@ export function MyOrders({ network, sign, sender, product, refreshKey }: Props) 
                   <td>{row.price}</td>
                   <td className="muted">{row.status}</td>
                   <td style={{ textAlign: 'right' }}>
-                    <button className="btn btn-secondary btn-sm" onClick={() => cancel(row)} disabled={cancelling !== null}>
-                      {cancelling === row.digest ? 'Cancelling…' : row.ladder ? 'Cancel ladder' : row.kind === 'Plan entry' ? 'Cancel plan' : 'Cancel'}
-                    </button>
+                    <span className="close-buttons">
+                      {row.movable && (
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() =>
+                            setMoving(
+                              moving?.digest === row.digest
+                                ? null
+                                : { digest: row.digest, price: priceInputValue(row.movable!.triggerPrice, product.price_increment_x18) }
+                            )
+                          }
+                          disabled={cancelling !== null || saving}
+                        >
+                          {moving?.digest === row.digest ? 'Close' : 'Move'}
+                        </button>
+                      )}
+                      <button className="btn btn-secondary btn-sm" onClick={() => cancel(row)} disabled={cancelling !== null || saving}>
+                        {cancelling === row.digest ? 'Cancelling…' : row.ladder ? 'Cancel ladder' : row.kind === 'Plan entry' ? 'Cancel plan' : 'Cancel'}
+                      </button>
+                    </span>
                   </td>
-                </tr>
-              ))}
+                </tr>,
+                moving?.digest === row.digest && row.movable ? (
+                  <MoveRow
+                    key={`${row.key}-move`}
+                    row={row}
+                    market={market}
+                    product={product}
+                    price={moving.price}
+                    saving={saving}
+                    onPrice={(price) => setMoving({ digest: row.digest, price })}
+                    onCancel={() => setMoving(null)}
+                    onSave={move}
+                  />
+                ) : null,
+              ])}
             </tbody>
           </table>
         </div>
       )}
     </div>
+  );
+}
+
+/** Inline editor under a stop-loss or take-profit: pick a new level, see where it would fill, then re-place it. */
+function MoveRow({
+  row,
+  market,
+  product,
+  price,
+  saving,
+  onPrice,
+  onCancel,
+  onSave,
+}: {
+  row: Row;
+  market: number | null;
+  product: ProductSymbol;
+  price: string;
+  saving: boolean;
+  onPrice: (price: string) => void;
+  onCancel: () => void;
+  onSave: (row: Row, plan: ReturnType<typeof planTriggerEdit>) => void;
+}) {
+  const closesLong = row.movable!.amount < 0n;
+  const plan = planTriggerEdit({
+    triggerPrice: Number(price),
+    closesLong,
+    above: row.movable!.above,
+    priceIncrementX18: BigInt(product.price_increment_x18),
+    marketPrice: market,
+  });
+
+  return (
+    <tr>
+      <td colSpan={6}>
+        <div className="move-editor">
+          <label className="field">
+            <span>New {row.kind.toLowerCase()} price</span>
+            <input type="number" min="0" step="any" value={price} onChange={(e) => onPrice(e.target.value)} autoFocus />
+          </label>
+          <div className="muted" style={{ maxWidth: 420 }}>
+            Fires when the price is {row.movable!.above ? 'at or above' : 'at or below'}{' '}
+            {formatPrice(fromX18(plan.triggerX18), product.price_increment_x18)}, then {closesLong ? 'sells' : 'buys'} {row.size}{' '}
+            {product.symbol.replace('-PERP', '')} at no worse than {formatPrice(fromX18(plan.limitX18), product.price_increment_x18)}.
+            {market ? ` Market now ${formatPrice(market, product.price_increment_x18)}.` : ''}
+            <br />
+            Two signatures: the new one is placed first, then the old one is cancelled.
+          </div>
+          <div className="form-row">
+            <button className="btn btn-primary btn-sm" disabled={saving || plan.errors.length > 0} onClick={() => onSave(row, plan)}>
+              {saving ? 'Confirm in your wallet…' : 'Move it'}
+            </button>
+            <button className="btn btn-secondary btn-sm" disabled={saving} onClick={onCancel}>
+              Cancel
+            </button>
+          </div>
+          {plan.errors.map((e) => (
+            <div key={e} className="notice error">
+              {e}
+            </div>
+          ))}
+        </div>
+      </td>
+    </tr>
   );
 }

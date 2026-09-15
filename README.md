@@ -46,6 +46,10 @@ Instead of one entry price, spread the entry across **up to 10 limit orders** be
 - One wallet signature per order (entries + 1 + targets). If a signature is rejected partway, the dashboard offers to roll back what was placed.
 - **Your ladders** shows how many entries are still resting, with *Cancel unfilled entries* (keeps the exits on what filled) and *Cancel entries and exits*. Only orders that are still open are sent, because Nado rejects a whole cancel batch if any order in it is already gone.
 
+## Moving a stop-loss or take-profit
+
+*My orders* can re-place an exit at a new level: the replacement goes in first, then the old one is cancelled (two signatures). In that order a rejected second signature leaves the position over-protected rather than unprotected, and both orders are reduce-only, so whichever fires first closes the position and the other can only be a no-op. The dependency on an unfilled entry is carried over, the limit keeps the 0.5% exit slippage, and a level the last price has already passed is refused before signing. If the cancel fails, the dashboard says so and points at the old order.
+
 ## TWAP and DCA
 
 Split a large order into slices that Nado executes over time, from **one signature** (a [TWAP order](https://docs.nado.xyz/developer-resources/api/trigger) on the trigger service, so it also runs while the dashboard is closed):

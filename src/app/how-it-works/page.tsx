@@ -302,6 +302,11 @@ export default function HowItWorks() {
               Orders from a ladder are labelled (&ldquo;Ladder entry 1 of 4&rdquo;), and cancelling a ladder&apos;s first entry here
               cancels the whole ladder, so the deeper entries are never left without their stop.
             </p>
+            <p>
+              <strong>Move a stop-loss or take-profit</strong> with the <em>Move</em> button: type a new level and Nadobot re-places it
+              there. It takes two signatures, and the new one is placed before the old one is cancelled, so your position is never left
+              unprotected in between. A level the market has already passed is refused, since it would fire straight away.
+            </p>
           </section>
 
           <section id="portfolio">
