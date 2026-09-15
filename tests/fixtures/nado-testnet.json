@@ -1,0 +1,198 @@
+{
+  "recordedAt": "2026-09-15T22:39:12.192Z",
+  "network": "Ink Sepolia (Nado testnet)",
+  "subaccount": "0x9319492e613205a4409b939434e3237c210a90f064656661756c740000000000",
+  "subaccountInfo": {
+    "exists": true,
+    "healths": [
+      {
+        "assets": "94819444862911029751",
+        "liabilities": "14466303898153463198",
+        "health": "80353140964757566553"
+      },
+      {
+        "assets": "94819444862911029751",
+        "liabilities": "10683370442063237259",
+        "health": "84136074420847792492"
+      },
+      {
+        "assets": "94819444862911029751",
+        "liabilities": "6900436985973011321",
+        "health": "87919007876938018430"
+      }
+    ],
+    "spot_balances": [
+      {
+        "product_id": 0,
+        "balance": {
+          "amount": "94819444862911029751"
+        }
+      }
+    ],
+    "perp_balances": [
+      {
+        "product_id": 2,
+        "balance": {
+          "amount": "5000000000000000",
+          "v_quote_balance": "-385193782594995605183",
+          "last_cumulative_funding_x18": "-8354652124116447700357"
+        }
+      },
+      {
+        "product_id": 4,
+        "balance": {
+          "amount": "0",
+          "v_quote_balance": "0",
+          "last_cumulative_funding_x18": "-356424787119377529397"
+        }
+      }
+    ],
+    "perp_products": [
+      {
+        "product_id": 2,
+        "oracle_price_x18": "75658669121804518772545",
+        "risk": {
+          "long_weight_initial_x18": "980000000000000000",
+          "short_weight_initial_x18": "1020000000000000000",
+          "long_weight_maintenance_x18": "990000000000000000",
+          "short_weight_maintenance_x18": "1010000000000000000",
+          "price_x18": "75658669121804518772545"
+        }
+      },
+      {
+        "product_id": 4,
+        "oracle_price_x18": "2401123061890489343990",
+        "risk": {
+          "long_weight_initial_x18": "980000000000000000",
+          "short_weight_initial_x18": "1020000000000000000",
+          "long_weight_maintenance_x18": "990000000000000000",
+          "short_weight_maintenance_x18": "1010000000000000000",
+          "price_x18": "2401123061890489343990"
+        }
+      }
+    ]
+  },
+  "simulations": [
+    {
+      "productId": 2,
+      "amount_x18": "10000000000000000",
+      "price_x18": "74902082430586473584819",
+      "v_quote_delta_x18": "-749020824305864735848",
+      "healths": [
+        {
+          "assets": "94819444862911029751",
+          "liabilities": "22032170810333915075",
+          "health": "72787274052577114676"
+        },
+        {
+          "assets": "94819444862911029751",
+          "liabilities": "10683370442063237259",
+          "health": "84136074420847792492"
+        },
+        {
+          "assets": "95484874789118470308",
+          "liabilities": "0",
+          "health": "95484874789118470308"
+        }
+      ]
+    },
+    {
+      "productId": 2,
+      "amount_x18": "-12000000000000000",
+      "price_x18": "76415255813022563960270",
+      "v_quote_delta_x18": "916983069756270767523",
+      "healths": [
+        {
+          "assets": "94819444862911029751",
+          "liabilities": "8413610368409101695",
+          "health": "86405834494501928056"
+        },
+        {
+          "assets": "94819444862911029751",
+          "liabilities": "3117503529882785381",
+          "health": "91701941333028244370"
+        },
+        {
+          "assets": "96998048171554560684",
+          "liabilities": "0",
+          "health": "96998048171554560684"
+        }
+      ]
+    },
+    {
+      "productId": 2,
+      "amount_x18": "20000000000000000",
+      "price_x18": "75658669121804518772545",
+      "v_quote_delta_x18": "-1513173382436090375450",
+      "healths": [
+        {
+          "assets": "94819444862911029751",
+          "liabilities": "44729771546875270706",
+          "health": "50089673316035759045"
+        },
+        {
+          "assets": "94819444862911029751",
+          "liabilities": "25815104266424141013",
+          "health": "69004340596486888738"
+        },
+        {
+          "assets": "94819444862911029751",
+          "liabilities": "6900436985973011320",
+          "health": "87919007876938018431"
+        }
+      ]
+    },
+    {
+      "productId": 4,
+      "amount_x18": "-100000000000000000",
+      "price_x18": "2401123061890489343990",
+      "v_quote_delta_x18": "240112306189048934399",
+      "healths": [
+        {
+          "assets": "94819444862911029751",
+          "liabilities": "19268550021934441885",
+          "health": "75550894840976587866"
+        },
+        {
+          "assets": "94819444862911029751",
+          "liabilities": "13084493503953726602",
+          "health": "81734951358957303149"
+        },
+        {
+          "assets": "94819444862911029751",
+          "liabilities": "6900436985973011321",
+          "health": "87919007876938018430"
+        }
+      ]
+    }
+  ],
+  "products": {
+    "BTC-PERP": {
+      "type": "perp",
+      "product_id": 2,
+      "symbol": "BTC-PERP",
+      "trading_status": "live",
+      "price_increment_x18": "1000000000000000000",
+      "size_increment": "50000000000000",
+      "min_size": "100000000000000000000"
+    },
+    "ETH-PERP": {
+      "type": "perp",
+      "product_id": 4,
+      "symbol": "ETH-PERP",
+      "trading_status": "live",
+      "price_increment_x18": "100000000000000000",
+      "size_increment": "1000000000000000",
+      "min_size": "100000000000000000000"
+    },
+    "TON-PERP": {
+      "type": "perp",
+      "product_id": 122,
+      "symbol": "TON-PERP",
+      "trading_status": "live",
+      "price_increment_x18": "100000000000000",
+      "size_increment": "500000000000000000",
+      "min_size": "100000000000000000000"
+    }
+  }
+}

@@ -98,6 +98,22 @@ Optional environment variables:
 | `NEXT_PUBLIC_BUILDER_ID` | Your Nado builder ID (see below). |
 | `NEXT_PUBLIC_BUILDER_FEE_RATE_TENTH_BPS` | Builder fee in 0.1bps units (10 = 1bps = 0.01%). Ignored unless a builder ID is set. |
 
+## Tests
+
+```bash
+npm test          # dashboard: order encoding, planners, risk, portfolio, placement (Vitest)
+cd bot && npm test  # bot (Jest)
+```
+
+The dashboard suite in `tests/` covers the code where a silent mistake would cost traders money:
+
+- **Encoding**: order appendix bits (checked against an appendix Nado recorded for a real order), TWAP value field, nonces, x18 conversion, and rounding to ticks and lots.
+- **Planners**: trade plan, ladder and TWAP sizes and prices, and every validation error. Ladders always add up exactly: entries, stop and targets each equal the full size.
+- **Risk**: `tests/fixtures/nado-testnet.json` holds a real testnet account's health plus Nado's own `apply_delta` simulation of four trades. The projection must match Nado to 6 decimals, and liquidation prices must bring maintenance health to zero.
+- **Placement**: against a fake Nado, the ladder must place the first entry, then its exits (dependent on that entry, reduce-only), then the other entries. A rejected signature must report what is already live, and cancels must skip orders that are already gone.
+
+To refresh the fixture, run a script that re-queries `subaccount_info` for a testnet account with no positions outside the recorded products, and review the diff.
+
 ## Builder code revenue
 
 Orders placed by the dashboard and the bot carry a builder ID and fee rate, so the builder earns a share of every trade.
