@@ -3,7 +3,7 @@ import './globals.css'
 import { Providers } from './Providers'
 
 export const metadata: Metadata = {
-  title: 'Nadobot · Independent trade automation for Nado (unofficial)',
+  title: 'Nadobot · Independent trade automation for Nado',
   description:
     'Nadobot is an independent tool for trading on Nado. Not affiliated with or endorsed by Nado. It never asks for token approvals or transfers.',
 }

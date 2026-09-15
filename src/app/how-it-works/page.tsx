@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { BUILDER_FEE_RATE_TENTH_BPS } from '@/lib/nado';
 
 export const metadata: Metadata = {
-  title: 'How Nadobot works · Independent trade automation for Nado (unofficial)',
+  title: 'How Nadobot works · Independent trade automation for Nado',
   description:
     'A guide to Nadobot: trade plans, ladders, TWAP and DCA, position protection, portfolio and alerts, all signed by your own wallet and run on Nado.',
 };
