@@ -338,6 +338,11 @@ export default function HowItWorks() {
                 <strong>In-app alerts</strong> pop up while the dashboard is open when your orders fill.
               </li>
               <li>
+                <strong>Price alerts</strong>: ask to be told when a market reaches a price. Nadobot watches it for you and the
+                notification opens the dashboard on that market, ready to trade. Alerts belong to the device, need no wallet, and fire
+                once.
+              </li>
+              <li>
                 <strong>Push notifications</strong> reach your device even with the dashboard closed. Turn them on in the dashboard and
                 allow notifications in your browser. On iPhone or iPad, first add the dashboard to your Home Screen (Share → Add to Home
                 Screen) and open it from there.

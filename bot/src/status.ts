@@ -2,7 +2,8 @@ import http from 'http';
 import { ENV } from './config/env';
 import { botState } from './state';
 import { parseSubscribe, isAllowedPushEndpoint } from './push/validate';
-import { pushPublicKey, subscribe, unsubscribe, pushSubscriptionCount } from './push/service';
+import { parseAlert } from './push/alerts';
+import { addAlert, listAlerts, pushPublicKey, removeAlert, subscribe, unsubscribe, pushSubscriptionCount } from './push/service';
 
 const MAX_BODY_BYTES = 16 * 1024;
 const WRITES_PER_MINUTE = 30;
@@ -101,6 +102,28 @@ export function startStatusServer(botAddress: string, subaccount: string) {
         if ('error' in input) return send(res, 400, input);
         await subscribe(input);
         return send(res, 200, { ok: true });
+      } catch (e: any) {
+        return send(res, 400, { error: e.message });
+      }
+    }
+
+    // Price alerts belong to a device, identified by its own push endpoint: no wallet or account is involved.
+    if (req.method === 'POST' && (url === '/push/alerts' || url === '/push/alerts/list' || url === '/push/alerts/delete')) {
+      const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
+      if (rateLimited(ip)) return send(res, 429, { error: 'Too many requests' });
+      try {
+        const body = await readJson(req);
+        if (!isAllowedPushEndpoint(body?.endpoint)) return send(res, 400, { error: 'Unsupported push endpoint' });
+        if (url === '/push/alerts/list') return send(res, 200, { alerts: listAlerts(body.endpoint) });
+        if (url === '/push/alerts/delete') {
+          if (typeof body?.id !== 'string' || body.id.length > 64) return send(res, 400, { error: 'Invalid alert' });
+          removeAlert(body.endpoint, body.id);
+          return send(res, 200, { alerts: listAlerts(body.endpoint) });
+        }
+        const alert = parseAlert(body.alert);
+        if ('error' in alert) return send(res, 400, alert);
+        addAlert(body.endpoint, alert);
+        return send(res, 200, { alerts: listAlerts(body.endpoint) });
       } catch (e: any) {
         return send(res, 400, { error: e.message });
       }

@@ -186,11 +186,14 @@ function base64UrlToBytes(base64Url: string) {
 
 const sameKey = (a: ArrayBuffer | null | undefined, b: Uint8Array) => !!a && a.byteLength === b.byteLength && new Uint8Array(a).every((v, i) => v === b[i]);
 
-async function postBot(path: string, body: unknown) {
+export async function postBotJson(path: string, body: unknown) {
   const res = await fetch(botApi(path), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error ?? `Bot returned ${res.status}`);
+  return json;
 }
+
+const postBot = postBotJson;
 
 /**
  * Web push: notifications for order fills and bot activity even when the dashboard is closed. The bot on Railway
@@ -294,5 +297,5 @@ export function usePush(sender: string | null, chainId: number) {
     sync(subscription, topics).catch((e) => setError(e.message));
   }, [subscription, sender, chainId, topics, sync]);
 
-  return { support, enabled: Boolean(subscription), topics, busy, error, enable, disable };
+  return { support, enabled: Boolean(subscription), endpoint: subscription?.endpoint ?? null, topics, busy, error, enable, disable };
 }

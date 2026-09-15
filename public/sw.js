@@ -14,8 +14,10 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-      // If the dashboard is on screen it already shows an in-app notice, so don't double up.
-      if (windows.some((w) => w.visibilityState === 'visible')) return;
+      // Fills and bot activity already appear as in-app notices, so don't double up while the dashboard is on screen.
+      // Price alerts have no in-app equivalent, so they are always shown.
+      const shownInApp = typeof data.tag === 'string' && (data.tag.startsWith('fill-') || data.tag.startsWith('bot-'));
+      if (shownInApp && windows.some((w) => w.visibilityState === 'visible')) return;
       await self.registration.showNotification(data.title || 'Nadobot', {
         body: data.body || '',
         tag: data.tag,

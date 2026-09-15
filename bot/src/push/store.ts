@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import webpush from 'web-push';
+import type { PriceAlert } from './alerts';
 
 export type PushTopic = 'bot' | 'fills';
 
@@ -12,6 +13,8 @@ export interface PushRecord {
   topics: PushTopic[];
   createdAt: string;
   lastSeenSubmissionIdx: string | null;
+  /** Price alerts this device asked for. */
+  alerts?: PriceAlert[];
 }
 
 interface StoreData {
@@ -52,9 +55,11 @@ export class PushStore {
   }
 
   upsert(record: PushRecord) {
+    // Stored as a copy: the caller keeping a reference must not be able to change saved data by accident.
+    const stored = { ...record, alerts: record.alerts ? [...record.alerts] : undefined };
     const i = this.data.subscriptions.findIndex((s) => s.endpoint === record.endpoint);
-    if (i >= 0) this.data.subscriptions[i] = record;
-    else this.data.subscriptions.push(record);
+    if (i >= 0) this.data.subscriptions[i] = stored;
+    else this.data.subscriptions.push(stored);
     this.save();
   }
 
@@ -62,6 +67,15 @@ export class PushStore {
     const before = this.data.subscriptions.length;
     this.data.subscriptions = this.data.subscriptions.filter((s) => s.endpoint !== endpoint);
     if (this.data.subscriptions.length !== before) this.save();
+  }
+
+  /** Replaces one subscription's alerts. Returns false when the subscription is gone (e.g. notifications were turned off). */
+  setAlerts(endpoint: string, alerts: PriceAlert[]) {
+    const record = this.data.subscriptions.find((s) => s.endpoint === endpoint);
+    if (!record) return false;
+    record.alerts = alerts;
+    this.save();
+    return true;
   }
 
   setLastSeen(chainId: number, subaccount: string, submissionIdx: string) {

@@ -3,6 +3,7 @@ import webpush from 'web-push';
 import { ENV } from '../config/env';
 import { PushStore, type PushRecord } from './store';
 import type { SubscribeInput } from './validate';
+import { alertTriggered, describeAlert, MAX_ALERTS_PER_SUBSCRIPTION, type PriceAlert } from './alerts';
 
 export interface PushPayload {
   title: string;
@@ -152,6 +153,92 @@ export function startFillWatcher() {
         } catch (e: any) {
           console.error(`Fill watch for ${key.slice(0, 18)}… failed: ${e.message}`);
         }
+      }
+    } finally {
+      running = false;
+    }
+  };
+  return setInterval(run, 30_000);
+}
+
+/* ---------------------------------- price alerts ---------------------------------- */
+
+/** Alerts a device is watching, newest first. */
+export function listAlerts(endpoint: string): PriceAlert[] {
+  return [...(store?.subscriptions.find((s) => s.endpoint === endpoint)?.alerts ?? [])].reverse();
+}
+
+export function addAlert(endpoint: string, alert: PriceAlert) {
+  if (!store) throw new Error('Push not initialised');
+  const record = store.subscriptions.find((s) => s.endpoint === endpoint);
+  if (!record) throw new Error('Turn on notifications for this device first');
+  const alerts = record.alerts ?? [];
+  if (alerts.length >= MAX_ALERTS_PER_SUBSCRIPTION) throw new Error(`You can watch at most ${MAX_ALERTS_PER_SUBSCRIPTION} prices at a time`);
+  if (alerts.some((a) => a.chainId === alert.chainId && a.productId === alert.productId && a.direction === alert.direction && a.price === alert.price)) {
+    throw new Error('You are already watching that price');
+  }
+  store.setAlerts(endpoint, [...alerts, alert]);
+  return alert;
+}
+
+export function removeAlert(endpoint: string, id: string) {
+  const record = store?.subscriptions.find((s) => s.endpoint === endpoint);
+  if (!record) return false;
+  return store!.setAlerts(endpoint, (record.alerts ?? []).filter((a) => a.id !== id));
+}
+
+/** Oracle price of every product on a network, keyed by product id. */
+async function fetchPrices(chainId: number): Promise<Record<number, number>> {
+  const { data } = await axios.post(`${NETWORK_URLS[chainId].gateway}/query`, { type: 'all_products' }, { headers, timeout: 15_000 });
+  const prices: Record<number, number> = {};
+  for (const p of [...(data.data?.spot_products ?? []), ...(data.data?.perp_products ?? [])]) prices[p.product_id] = x18(p.oracle_price_x18);
+  return prices;
+}
+
+/**
+ * Every 30s, checks the markets that alerts are waiting on and notifies the devices whose level was crossed. An alert
+ * fires once and is then removed, so a price hovering around the level can't send the same notification repeatedly.
+ */
+export function startPriceWatcher(fetchAll: (chainId: number) => Promise<Record<number, number>> = fetchPrices) {
+  const previous: Record<number, Record<number, number>> = {};
+  let running = false;
+
+  const run = async () => {
+    if (!store || running) return;
+    running = true;
+    try {
+      const chains = new Set<number>();
+      for (const s of store.subscriptions) for (const a of s.alerts ?? []) if (NETWORK_URLS[a.chainId]) chains.add(a.chainId);
+
+      for (const chainId of chains) {
+        let prices: Record<number, number>;
+        try {
+          prices = await fetchAll(chainId);
+        } catch (e: any) {
+          console.error(`Price watch on chain ${chainId} failed: ${e.message}`);
+          continue;
+        }
+        const before = previous[chainId] ?? {};
+
+        for (const record of store.subscriptions) {
+          const alerts = record.alerts ?? [];
+          const fired = alerts.filter((a) => a.chainId === chainId && alertTriggered(a, before[a.productId], prices[a.productId]));
+          if (!fired.length) continue;
+          store.setAlerts(
+            record.endpoint,
+            alerts.filter((a) => !fired.includes(a))
+          );
+          for (const alert of fired) {
+            await send(record, {
+              title: 'Price alert',
+              body: describeAlert(alert, prices[alert.productId]),
+              tag: `alert-${alert.id}`,
+              // Opens the dashboard on that market, ready to trade.
+              url: `/dashboard?market=${encodeURIComponent(alert.symbol)}`,
+            });
+          }
+        }
+        previous[chainId] = prices;
       }
     } finally {
       running = false;

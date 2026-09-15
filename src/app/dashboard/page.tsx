@@ -29,6 +29,7 @@ import { PushSettings } from './components/PushSettings';
 import { TwapForm } from './components/TwapForm';
 import { LadderForm } from './components/LadderForm';
 import { PortfolioPanel } from './components/PortfolioPanel';
+import { PriceAlerts } from './components/PriceAlerts';
 import { MainnetGate, NetworkSwitch, useDashboardNetwork } from './components/NetworkSwitch';
 import { MarketPicker, tradableMarkets } from './components/MarketPicker';
 
@@ -56,8 +57,10 @@ export default function Dashboard() {
   const markets = useMemo(() => tradableMarkets(symbols), [symbols]);
   const product = markets.find((m) => m.symbol === market);
 
-  // Remember the last market; fall back to BTC when it isn't tradable on this network.
+  // A price alert notification opens /dashboard?market=SYMBOL; otherwise fall back to the last market used here.
   useEffect(() => {
+    const fromLink = new URLSearchParams(window.location.search).get('market');
+    if (fromLink) return setMarket(fromLink.toUpperCase());
     try {
       const saved = localStorage.getItem(MARKET_KEY);
       if (saved) setMarket(saved);
@@ -279,6 +282,14 @@ export default function Dashboard() {
         </>
       )}
 
+      <PriceAlerts
+        network={network}
+        product={product}
+        bid={quote?.bid ?? null}
+        ask={quote?.ask ?? null}
+        endpoint={push.endpoint}
+        pushEnabled={push.enabled}
+      />
       <PushSettings
         support={push.support}
         enabled={push.enabled}
