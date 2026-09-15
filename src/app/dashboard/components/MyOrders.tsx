@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import {
+  cancelLadder,
   cancelOrders,
   fetchOpenOrders,
   fromX18,
@@ -13,6 +14,7 @@ import {
   type SignTypedDataAsync,
   type TriggerOrderEntry,
 } from '@/lib/nado';
+import { ladderRoles, type SavedLadder } from './LadderForm';
 
 interface Props {
   network: NadoNetwork;
@@ -32,6 +34,8 @@ interface Row {
   service: 'gateway' | 'trigger';
   digest: string;
   linkedTo?: string;
+  /** Set on a ladder's first entry: cancelling it alone would strip the exits from the deeper entries. */
+  ladder?: SavedLadder;
 }
 
 const usd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -110,6 +114,14 @@ export function MyOrders({ network, sign, sender, product, refreshKey }: Props) 
       });
       const planEntries = new Set(triggerRows.map((r) => r.linkedTo).filter(Boolean));
       for (const r of bookRows) if (planEntries.has(r.digest)) r.kind = 'Plan entry';
+      const ladders = ladderRoles(network.chainId, sender);
+      for (const r of [...bookRows, ...triggerRows]) {
+        const role = ladders.get(r.digest.toLowerCase());
+        if (!role) continue;
+        r.kind = role.label;
+        r.linkedTo = undefined;
+        if (role.firstRung) r.ladder = role.ladder;
+      }
       setRows([...bookRows, ...triggerRows]);
     } catch (e: any) {
       setError(e.shortMessage ?? e.message);
@@ -127,7 +139,8 @@ export function MyOrders({ network, sign, sender, product, refreshKey }: Props) 
     setCancelling(row.digest);
     setError(null);
     try {
-      await cancelOrders(network, sign, row.service, sender, [{ productId: product.product_id, digest: row.digest }]);
+      if (row.ladder) await cancelLadder(network, sign, sender, product.product_id, row.ladder.orders, true);
+      else await cancelOrders(network, sign, row.service, sender, [{ productId: product.product_id, digest: row.digest }]);
       await new Promise((r) => setTimeout(r, 3000));
       await load();
     } catch (e: any) {
@@ -182,7 +195,7 @@ export function MyOrders({ network, sign, sender, product, refreshKey }: Props) 
                   <td className="muted">{row.status}</td>
                   <td style={{ textAlign: 'right' }}>
                     <button className="btn btn-secondary btn-sm" onClick={() => cancel(row)} disabled={cancelling !== null}>
-                      {cancelling === row.digest ? 'Cancelling…' : row.kind === 'Plan entry' ? 'Cancel plan' : 'Cancel'}
+                      {cancelling === row.digest ? 'Cancelling…' : row.ladder ? 'Cancel ladder' : row.kind === 'Plan entry' ? 'Cancel plan' : 'Cancel'}
                     </button>
                   </td>
                 </tr>

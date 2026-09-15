@@ -688,3 +688,256 @@ export function describeTwap(entry: TriggerOrderEntry) {
     intervalSeconds: Number(entry.order.trigger?.time_trigger?.interval ?? 0),
   };
 }
+
+/* ---------------------------------- ladders ---------------------------------- */
+
+export const LADDER_MAX_RUNGS = 10;
+export const LADDER_MAX_TAKE_PROFITS = 4;
+
+export interface LadderTakeProfit {
+  /** Distance from the average entry price. */
+  percent: number;
+  /** Share of the full ladder size this target closes. Shares add up to 100. */
+  sharePercent: number;
+}
+
+export interface LadderInput {
+  productId: number;
+  sender: `0x${string}`;
+  side: 'long' | 'short';
+  totalSize: number;
+  rungs: number;
+  /** Rung closest to the market, which fills first. */
+  nearPrice: number;
+  /** Rung furthest from the market. */
+  farPrice: number;
+  /** 'even' puts the same size on every rung; 'weighted' puts more size on better prices (1x near to Nx far). */
+  distribution: 'even' | 'weighted';
+  /** Distance from the average entry price. */
+  stopLossPercent: number;
+  takeProfits: LadderTakeProfit[];
+  expiresInDays: number;
+  bid?: number | null;
+  ask?: number | null;
+  priceIncrementX18: bigint;
+  sizeIncrementX18: bigint;
+  minOrderValueX18: bigint;
+}
+
+export interface LadderExit {
+  triggerX18: bigint;
+  limitX18: bigint;
+  amount: bigint;
+}
+
+export interface LadderPlan {
+  rungs: { priceX18: bigint; amount: bigint }[];
+  amount: bigint;
+  averageEntry: number;
+  stop: LadderExit;
+  takeProfits: (LadderExit & LadderTakeProfit)[];
+  /** Wallet signatures needed to place the whole ladder. */
+  signatures: number;
+  errors: string[];
+}
+
+const usdText = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+const valueOf = (amount: bigint, priceX18: bigint) => fromX18(((amount < 0n ? -amount : amount) * priceX18) / X18);
+
+/** Splits `totalLots` by weight in whole lots; the rounding remainder goes to the last part so nothing is lost. */
+function splitLots(totalLots: bigint, weights: number[]): bigint[] {
+  const scaled = weights.map((w) => BigInt(Math.round(w * 10_000)));
+  const sum = scaled.reduce((a, b) => a + b, 0n);
+  if (sum === 0n) return weights.map(() => 0n);
+  const parts = scaled.map((w) => (totalLots * w) / sum);
+  parts[parts.length - 1] += totalLots - parts.reduce((a, b) => a + b, 0n);
+  return parts;
+}
+
+/**
+ * Pure: turns a ladder request into tick- and lot-aligned orders and checks it behaves as intended: every rung rests
+ * instead of filling instantly, the stop sits beyond the last rung, every target sits beyond the first rung, and every
+ * order clears the market minimum (the trigger service only enforces that when an exit fires, so it is checked here).
+ */
+export function planLadder(p: LadderInput): LadderPlan {
+  const errors: string[] = [];
+  const isLong = p.side === 'long';
+  const dir = isLong ? 1 : -1;
+  const n = Math.floor(p.rungs);
+  if (!(n >= 1 && n <= LADDER_MAX_RUNGS)) errors.push(`Use between 1 and ${LADDER_MAX_RUNGS} rungs.`);
+  const rungCount = Math.min(Math.max(n || 1, 1), LADDER_MAX_RUNGS);
+  if (!(p.nearPrice > 0)) errors.push('Enter the price of the first rung.');
+  if (rungCount > 1) {
+    if (!(p.farPrice > 0)) errors.push('Enter the price of the last rung.');
+    else if (isLong ? p.farPrice >= p.nearPrice : p.farPrice <= p.nearPrice)
+      errors.push(isLong ? 'For a long ladder, the last rung must be below the first.' : 'For a short ladder, the last rung must be above the first.');
+  }
+  if (!(p.stopLossPercent > 0 && p.stopLossPercent < 50)) errors.push('Stop-loss must be between 0 and 50%.');
+  const tps = p.takeProfits;
+  if (!(tps.length >= 1 && tps.length <= LADDER_MAX_TAKE_PROFITS)) errors.push(`Use between 1 and ${LADDER_MAX_TAKE_PROFITS} take-profit targets.`);
+  if (tps.some((t) => !(t.percent > 0) || !(t.sharePercent > 0))) errors.push('Every take-profit needs a distance and a share above 0.');
+  else if (tps.some((t, i) => i > 0 && t.percent <= tps[i - 1].percent)) errors.push('Each take-profit must be further away than the one before it.');
+  const shareTotal = tps.reduce((a, t) => a + (t.sharePercent || 0), 0);
+  if (Math.abs(shareTotal - 100) > 0.01) errors.push(`Take-profit shares add up to ${Number(shareTotal.toFixed(2))}%; they must add up to 100%.`);
+
+  const lot = p.sizeIncrementX18;
+  const totalLots = lot > 0n ? roundToIncrement(toX18(Math.max(p.totalSize || 0, 0)), lot, 'down') / lot : 0n;
+  if (totalLots === 0n) errors.push("Size is below this market's minimum lot size.");
+
+  // Prices step evenly from the first rung to the last. Buys round down and sells round up, so neither pays worse.
+  const tickMode: RoundMode = isLong ? 'down' : 'up';
+  const nearPrice = p.nearPrice > 0 ? p.nearPrice : 0;
+  const farPrice = rungCount > 1 && p.farPrice > 0 ? p.farPrice : nearPrice;
+  const prices = Array.from({ length: rungCount }, (_, i) =>
+    roundToIncrement(toX18(rungCount > 1 ? nearPrice + ((farPrice - nearPrice) * i) / (rungCount - 1) : nearPrice), p.priceIncrementX18, tickMode)
+  );
+  if (nearPrice > 0 && prices.some((px, i) => i > 0 && px === prices[i - 1])) errors.push("Rungs are closer together than this market's price tick. Widen the range or use fewer rungs.");
+
+  const weights = Array.from({ length: rungCount }, (_, i) => (p.distribution === 'weighted' ? i + 1 : 1));
+  const rungLots = splitLots(totalLots, weights);
+  const sign = BigInt(dir);
+  const rungs = prices.map((priceX18, i) => ({ priceX18, amount: rungLots[i] * lot * sign }));
+  const amount = totalLots * lot * sign;
+  const min = fromX18(p.minOrderValueX18);
+
+  if (totalLots > 0n && rungLots.some((l) => l === 0n)) {
+    errors.push("Some rungs are smaller than this market's minimum lot size. Increase the size or use fewer rungs.");
+  } else if (totalLots > 0n && nearPrice > 0) {
+    const values = rungs.map((r) => valueOf(r.amount, r.priceX18));
+    const smallest = Math.min(...values);
+    if (smallest < min) {
+      const needed = Math.ceil(values.reduce((a, b) => a + b, 0) * (min / smallest) * 1.02);
+      errors.push(`The smallest rung is worth about ${usdText(smallest)}, below this market's ${usdText(min)} minimum. Use at least ~${usdText(needed)} in total, or fewer rungs.`);
+    }
+  }
+
+  // A rung on the wrong side of the market would fill immediately as a taker order instead of waiting for the price.
+  const near = fromX18(prices[0]);
+  if (near > 0 && isLong && p.ask && near >= p.ask) errors.push(`The first rung (${usdText(near)}) is at or above the ask (${usdText(p.ask)}), so it would fill immediately. Start the ladder below the market.`);
+  if (near > 0 && !isLong && p.bid && near <= p.bid) errors.push(`The first rung (${usdText(near)}) is at or below the bid (${usdText(p.bid)}), so it would fill immediately. Start the ladder above the market.`);
+
+  const averageEntry = totalLots > 0n ? rungs.reduce((a, r) => a + valueOf(r.amount, r.priceX18), 0) / Math.abs(fromX18(amount)) : near;
+  const worse = isLong ? 1 - EXIT_SLIPPAGE : 1 + EXIT_SLIPPAGE;
+  const exitMode: RoundMode = isLong ? 'down' : 'up';
+  const tick = (v: number, mode: RoundMode) => roundToIncrement(toX18(v), p.priceIncrementX18, mode);
+
+  const stopPrice = averageEntry * (1 - (dir * p.stopLossPercent) / 100);
+  const stop: LadderExit = { triggerX18: tick(stopPrice, 'nearest'), limitX18: tick(stopPrice * worse, exitMode), amount: -amount };
+  const last = fromX18(prices[prices.length - 1]);
+  if (near > 0 && p.stopLossPercent > 0 && (isLong ? fromX18(stop.triggerX18) >= last : fromX18(stop.triggerX18) <= last)) {
+    errors.push(
+      `The stop-loss (${usdText(fromX18(stop.triggerX18))}) is ${isLong ? 'at or above' : 'at or below'} your last rung (${usdText(last)}), so it could close the position before the ladder fills. Widen the stop-loss or narrow the ladder.`
+    );
+  }
+
+  const tpLots = splitLots(totalLots, tps.map((t) => (t.sharePercent > 0 ? t.sharePercent : 0)));
+  const takeProfits = tps.map((t, i) => {
+    const price = averageEntry * (1 + (dir * t.percent) / 100);
+    return { ...t, triggerX18: tick(price, 'nearest'), limitX18: tick(price * worse, exitMode), amount: -tpLots[i] * lot * sign };
+  });
+  if (near > 0) {
+    takeProfits.forEach((t, i) => {
+      if (!(t.percent > 0) || !(t.sharePercent > 0)) return;
+      const trigger = fromX18(t.triggerX18);
+      if (isLong ? trigger <= near : trigger >= near) {
+        errors.push(`Take-profit ${i + 1} (${usdText(trigger)}) is ${isLong ? 'at or below' : 'at or above'} your first rung (${usdText(near)}), so it could close at a loss. Move it further out.`);
+      } else if (totalLots > 0n && valueOf(t.amount, t.triggerX18) < min) {
+        errors.push(`Take-profit ${i + 1} closes only about ${usdText(valueOf(t.amount, t.triggerX18))}, below this market's ${usdText(min)} minimum, so it would fail when it fires. Give it a bigger share or use fewer targets.`);
+      }
+    });
+  }
+
+  return { rungs, amount, averageEntry, stop, takeProfits, signatures: rungCount + 1 + tps.length, errors };
+}
+
+export interface PlacedOrder {
+  service: 'gateway' | 'trigger';
+  digest: string;
+  role: 'rung' | 'stop' | 'take-profit';
+}
+
+/** Thrown when an order fails partway through a ladder: `placed` lists what is already live so it can be rolled back. */
+export class LadderPlacementError extends Error {
+  constructor(
+    message: string,
+    readonly placed: PlacedOrder[]
+  ) {
+    super(message);
+  }
+}
+
+/**
+ * Places a ladder: the first rung, then the stop-loss and take-profits (dormant until that rung fills, which happens
+ * before any deeper rung because the price reaches it first), then the remaining rungs. Exits are reduce-only and sized
+ * for the full ladder, so they never close more than has actually filled.
+ */
+export async function placeLadder(
+  network: NadoNetwork,
+  sign: SignTypedDataAsync,
+  p: LadderInput,
+  onProgress?: (signed: number, total: number) => void
+): Promise<{ plan: LadderPlan; placed: PlacedOrder[] }> {
+  const plan = planLadder(p);
+  if (plan.errors.length) throw new Error(plan.errors[0]);
+  const isLong = p.side === 'long';
+  const expiresInSeconds = Math.round(p.expiresInDays * 86400);
+  const exitExpiry = expiresInSeconds + 60 * 60 * 24 * 30;
+  const placed: PlacedOrder[] = [];
+
+  const step = async (role: PlacedOrder['role'], service: PlacedOrder['service'], place: () => Promise<string>) => {
+    onProgress?.(placed.length, plan.signatures);
+    try {
+      placed.push({ role, service, digest: await place() });
+    } catch (e: any) {
+      throw new LadderPlacementError(e.shortMessage ?? e.message, [...placed]);
+    }
+  };
+  const rung = (i: number) => () =>
+    placeOrder(network, sign, { productId: p.productId, sender: p.sender, priceX18: plan.rungs[i].priceX18, amount: plan.rungs[i].amount, expiresInSeconds });
+  const exit = (e: LadderExit, priceRequirement: PriceRequirement, dependsOn: string) => () =>
+    placeTriggerOrder(network, sign, { productId: p.productId, sender: p.sender, priceX18: e.limitX18, amount: e.amount, priceRequirement, dependsOn, expiresInSeconds: exitExpiry });
+
+  await step('rung', 'gateway', rung(0));
+  const firstRung = placed[0].digest;
+  const stopAt = plan.stop.triggerX18.toString();
+  await step('stop', 'trigger', exit(plan.stop, isLong ? { last_price_below: stopAt } : { last_price_above: stopAt }, firstRung));
+  for (const tp of plan.takeProfits) {
+    const at = tp.triggerX18.toString();
+    await step('take-profit', 'trigger', exit(tp, isLong ? { last_price_above: at } : { last_price_below: at }, firstRung));
+  }
+  for (let i = 1; i < plan.rungs.length; i++) await step('rung', 'gateway', rung(i));
+  onProgress?.(placed.length, plan.signatures);
+  return { plan, placed };
+}
+
+const sameDigest = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+
+/** Digests of a ladder's rungs still resting on the orderbook. Public data, so no signature. */
+export async function openLadderRungs(network: NadoNetwork, sender: `0x${string}`, productId: number, orders: PlacedOrder[]) {
+  const book: { digest: string }[] = (await fetchOpenOrders(network, sender, productId)).orders ?? [];
+  return orders.filter((o) => o.service === 'gateway' && book.some((b) => sameDigest(b.digest, o.digest)));
+}
+
+/**
+ * Cancels a ladder's unfilled rungs and, with `includeExits`, its stop-loss and take-profits. Nado rejects a whole
+ * cancel batch if any digest is already gone, so only orders that are still open are sent. Rungs go first: if the
+ * trader rejects the next signature, the exits keep protecting whatever already filled.
+ */
+export async function cancelLadder(
+  network: NadoNetwork,
+  sign: SignTypedDataAsync,
+  sender: `0x${string}`,
+  productId: number,
+  orders: PlacedOrder[],
+  includeExits: boolean
+) {
+  const rungs = await openLadderRungs(network, sender, productId, orders);
+  await cancelOrders(network, sign, 'gateway', sender, rungs.map((o) => ({ productId, digest: o.digest })));
+  const exits = orders.filter((o) => o.service === 'trigger');
+  if (!includeExits || exits.length === 0) return;
+  // Exits waiting on a cancelled first rung may be removed with it, so re-read what is still pending.
+  if (rungs.length) await new Promise((r) => setTimeout(r, 2000));
+  const pending = await listTriggerOrders(network, sign, sender, [productId]);
+  const live = exits.filter((o) => pending.some((t) => sameDigest(t.order.digest, o.digest)));
+  await cancelOrders(network, sign, 'trigger', sender, live.map((o) => ({ productId, digest: o.digest })));
+}

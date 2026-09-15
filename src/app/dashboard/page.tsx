@@ -23,6 +23,7 @@ import { BotStatus } from './components/BotStatus';
 import { Toasts, useBotStatus, useNotifications, usePush, useWalletFills } from './notifications';
 import { PushSettings } from './components/PushSettings';
 import { TwapForm } from './components/TwapForm';
+import { LadderForm } from './components/LadderForm';
 import { MainnetGate, NetworkSwitch, useDashboardNetwork } from './components/NetworkSwitch';
 
 const MARKETS = ['BTC-PERP', 'ETH-PERP'];
@@ -165,6 +166,18 @@ export default function Dashboard() {
           {product && onSupportedChain && (
             <MainnetGate network={network}>
               <TradePlanForm
+                network={network}
+                sign={sign}
+                sender={sender}
+                product={product}
+                bid={quote?.bid ?? null}
+                ask={quote?.ask ?? null}
+                onCreated={() => {
+                  setOrdersRefreshKey((k) => k + 1);
+                  refresh();
+                }}
+              />
+              <LadderForm
                 network={network}
                 sign={sign}
                 sender={sender}

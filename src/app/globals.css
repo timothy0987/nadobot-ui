@@ -546,3 +546,36 @@ button:disabled {
   background: var(--accent-gradient);
   transition: width 0.4s ease;
 }
+
+/* Ladder take-profit editor: one compact row per target */
+.tp-grid {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(4.5rem, 9rem) minmax(4.5rem, 9rem) auto;
+  justify-items: start;
+  gap: 0.4rem 0.75rem;
+  align-items: center;
+  font-size: 0.85rem;
+}
+
+.tp-row {
+  display: contents;
+}
+
+.tp-grid > .tp-row > input {
+  justify-self: stretch;
+}
+
+.tp-grid input {
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  color: var(--text-primary);
+  font-size: 1rem;
+  width: 100%;
+}
+
+.tp-grid input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}

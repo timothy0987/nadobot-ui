@@ -18,6 +18,17 @@ All three live on Nado's servers, so the plan runs whether or not the dashboard 
 
 **Why not a shared bot key?** Nado's [linked signers](https://docs.nado.xyz/developer-resources/get-started/linked-signers) have full permissions, including withdrawals. A single bot key linked to many traders' accounts would let one server compromise drain every account. Trade plans avoid that entirely: nobody but the trader ever holds a key that controls their funds.
 
+## Ladders and scaled take-profits
+
+Instead of one entry price, spread the entry across **up to 10 limit orders** between a first and last price, then close the position in **up to 4 take-profit steps**, with one stop-loss covering the whole ladder.
+
+- **Even** puts the same size on every entry; **Weighted** puts more size on better prices (1x on the first entry up to Nx on the last).
+- Stop-loss and targets are set as a distance from the average entry. The preview shows every order, the average entry, the loss at the stop and the profit if every target hits.
+- Order of placement: the first entry, then the stop-loss and take-profits (dormant until that entry fills; price always reaches it before deeper entries), then the other entries. Exits are reduce-only and sized for the full ladder, so they never close more than has filled.
+- Before signing, the dashboard checks that entries rest on the book instead of filling instantly, the stop sits beyond the last entry, every target sits beyond the first entry, and every entry and target is worth at least the market minimum ($100 on BTC-PERP). Nado's trigger service only checks that minimum when an exit fires, so an undersized target would otherwise fail silently.
+- One wallet signature per order (entries + 1 + targets). If a signature is rejected partway, the dashboard offers to roll back what was placed.
+- **Your ladders** shows how many entries are still resting, with *Cancel unfilled entries* (keeps the exits on what filled) and *Cancel entries and exits*. Only orders that are still open are sent, because Nado rejects a whole cancel batch if any order in it is already gone.
+
 ## TWAP and DCA
 
 Split a large order into slices that Nado executes over time, from **one signature** (a [TWAP order](https://docs.nado.xyz/developer-resources/api/trigger) on the trigger service, so it also runs while the dashboard is closed):
