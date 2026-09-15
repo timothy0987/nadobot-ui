@@ -5,7 +5,7 @@ import { useAccount, useSwitchChain } from 'wagmi';
 import { INK_MAINNET, INK_SEPOLIA, NETWORKS, type NadoNetwork } from '@/lib/nado';
 
 const PREFERRED_KEY = 'nadobot:network';
-const MAINNET_ACK_KEY = 'nadobot:mainnet-ack';
+const MAINNET_ACK_KEY = 'nadobot:mainnet-ack-v2';
 
 const readStorage = (key: string) => {
   try {
@@ -98,8 +98,14 @@ export function MainnetGate({ network, children }: { network: NadoNetwork; child
           affiliated with Nado, and never holds your keys: you sign every order yourself.
         </p>
         <label style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', marginTop: '1.25rem' }}>
-          <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} />I understand these orders use real funds
-          and I&apos;m responsible for them.
+          <input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} />
+          <span>
+            I understand these orders use real funds, I&apos;m responsible for them, and I accept the{' '}
+            <a href="/terms" target="_blank" rel="noreferrer" style={{ textDecoration: 'underline' }}>
+              Terms of use
+            </a>
+            .
+          </span>
         </label>
         <div className="form-row">
           <button

@@ -42,8 +42,12 @@ export default function RootLayout({
             </p>
             <p>
               Nadobot never asks for token approvals, transfers, or on-chain transactions. The only wallet requests are signed
-              messages for Nado (<code>Order</code>, <code>Cancellation</code>, <code>ListTriggerOrders</code>). Reject anything else.{' '}
-              <a href="/how-it-works">How Nadobot works</a>
+              messages for Nado (<code>Order</code>, <code>Cancellation</code>, <code>ListTriggerOrders</code>). Reject anything else.
+            </p>
+            <p className="footer-links">
+              <a href="/how-it-works">How it works</a>
+              <a href="/terms">Terms of use</a>
+              <a href="/privacy">Privacy</a>
             </p>
           </footer>
         </Providers>

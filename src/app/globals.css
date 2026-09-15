@@ -1110,3 +1110,14 @@ button:disabled {
   border-color: rgba(245, 158, 11, 0.45);
   color: #fbbf24;
 }
+
+/* Legal pages and footer links */
+.doc.legal {
+  margin-top: 2rem;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+}
