@@ -2,15 +2,22 @@
 
 import { useMemo, useState } from 'react';
 import {
+  assessTradeRisk,
   createTradePlan,
-  priceTradePlan,
+  formatPrice,
   fromX18,
+  priceInputValue,
+  priceTradePlan,
+  sizeForRisk,
+  type AccountRisk,
   type NadoNetwork,
   type ProductSymbol,
   type SignTypedDataAsync,
 } from '@/lib/nado';
+import { RiskPreview } from './RiskPreview';
 
 interface Props {
+  account: AccountRisk | null;
   network: NadoNetwork;
   sign: SignTypedDataAsync;
   sender: `0x${string}`;
@@ -20,11 +27,14 @@ interface Props {
   onCreated: () => void;
 }
 
+type SizeMode = 'usd' | 'base' | 'risk';
+
 const usd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
-export function TradePlanForm({ network, sign, sender, product, bid, ask, onCreated }: Props) {
+export function TradePlanForm({ account, network, sign, sender, product, bid, ask, onCreated }: Props) {
   const [side, setSide] = useState<'long' | 'short'>('long');
-  const [size, setSize] = useState('0.002');
+  const [sizeMode, setSizeMode] = useState<SizeMode>('usd');
+  const [sizeValue, setSizeValue] = useState('500');
   const [entry, setEntry] = useState('');
   const [stopLoss, setStopLoss] = useState('5');
   const [takeProfit, setTakeProfit] = useState('10');
@@ -32,38 +42,74 @@ export function TradePlanForm({ network, sign, sender, product, bid, ask, onCrea
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
 
+  const isLong = side === 'long';
+  const base = product.symbol.replace('-PERP', '');
+  const tick = product.price_increment_x18;
+  const price = (n: number) => formatPrice(n, tick);
+  // Suggested entry: 2% past the market, so the plan waits for a better price instead of filling immediately.
+  const defaultEntry = isLong ? (bid ? bid * 0.98 : 0) : ask ? ask * 1.02 : 0;
+  const entryPrice = Number(entry) || defaultEntry;
+  const stopPercent = Number(stopLoss);
+  const stopPrice = entryPrice * (isLong ? 1 - stopPercent / 100 : 1 + stopPercent / 100);
+
+  // Size in the market's base asset, from whichever unit the trader typed.
+  const size = useMemo(() => {
+    const value = Number(sizeValue);
+    if (!value || !entryPrice) return 0;
+    if (sizeMode === 'base') return value;
+    if (sizeMode === 'usd') return value / entryPrice;
+    return sizeForRisk(value, entryPrice, stopPrice, product.size_increment);
+  }, [sizeValue, sizeMode, entryPrice, stopPrice, product.size_increment]);
+
   const input = useMemo(() => {
-    const entryPrice = Number(entry);
-    if (!entryPrice || !Number(size)) return null;
+    if (!entryPrice || !size) return null;
     return {
       productId: product.product_id,
       sender,
       side,
-      size: Number(size),
+      size,
       entryPrice,
-      stopLossPercent: Number(stopLoss),
+      stopLossPercent: stopPercent,
       takeProfitPercent: Number(takeProfit),
       expiresInDays: Number(days) || 7,
       priceIncrementX18: BigInt(product.price_increment_x18),
       sizeIncrementX18: BigInt(product.size_increment),
     };
-  }, [entry, size, side, stopLoss, takeProfit, days, product, sender]);
+  }, [entryPrice, size, side, stopPercent, takeProfit, days, product, sender]);
 
   const preview = input ? priceTradePlan(input) : null;
-  const notional = preview ? Math.abs(fromX18(preview.amount)) * fromX18(preview.entryX18) : 0;
+  const lots = preview ? Math.abs(fromX18(preview.amount)) : 0;
+  const entryX18Price = preview ? fromX18(preview.entryX18) : 0;
+  const notional = lots * entryX18Price;
   const minNotional = fromX18(product.min_size);
+  const lossAtStop = preview ? Math.abs(entryX18Price - fromX18(preview.stopX18)) * lots : 0;
+  const profitAtTarget = preview ? Math.abs(fromX18(preview.takeProfitX18) - entryX18Price) * lots : 0;
+
+  const risk =
+    account && preview && lots > 0
+      ? assessTradeRisk(account, {
+          productId: product.product_id,
+          fills: [{ productId: product.product_id, amount: isLong ? lots : -lots, price: entryX18Price }],
+          stopPrice: fromX18(preview.stopX18),
+          priceIncrementX18: tick,
+        })
+      : null;
 
   // Entering on the wrong side of the market would fill instantly as a taker, which is a market order, not a plan.
-  const marketSide = side === 'long' ? ask : bid;
-  const warning =
-    preview && marketSide && (side === 'long' ? fromX18(preview.entryX18) >= marketSide : fromX18(preview.entryX18) <= marketSide)
-      ? `This entry is ${side === 'long' ? 'at or above the ask' : 'at or below the bid'} (${usd(marketSide)}), so it will fill immediately.`
-      : notional > 0 && notional < minNotional
-        ? `Order value ${usd(notional)} is below this market's ${usd(minNotional)} minimum.`
-        : null;
+  const marketSide = isLong ? ask : bid;
+  const warning = !(stopPercent > 0 && stopPercent < 100)
+    ? 'Enter a stop-loss between 0 and 100%.'
+    : preview && lots === 0
+      ? `Size is below this market's minimum lot size.`
+      : preview && marketSide && (isLong ? entryX18Price >= marketSide : entryX18Price <= marketSide)
+        ? `This entry is ${isLong ? 'at or above the ask' : 'at or below the bid'} (${price(marketSide)}), so it will fill immediately.`
+        : notional > 0 && notional < minNotional
+          ? `Order value ${usd(notional)} is below this market's ${usd(minNotional)} minimum.${sizeMode === 'risk' ? ' Risk a larger amount or use a tighter stop-loss.' : ''}`
+          : null;
+  const blocked = Boolean(warning) || Boolean(risk?.errors.length);
 
   async function submit() {
-    if (!input) return;
+    if (!input || blocked) return;
     setBusy(true);
     setResult(null);
     try {
@@ -89,7 +135,7 @@ export function TradePlanForm({ network, sign, sender, product, bid, ask, onCrea
         </div>
         {bid && ask && (
           <span className="pill">
-            {product.symbol} bid {usd(bid)} / ask {usd(ask)}
+            {product.symbol} bid {price(bid)} / ask {price(ask)}
           </span>
         )}
       </div>
@@ -103,8 +149,23 @@ export function TradePlanForm({ network, sign, sender, product, bid, ask, onCrea
           </select>
         </label>
         <label className="field">
-          <span>Size ({product.symbol.replace('-PERP', '')})</span>
-          <input type="number" min="0" step="any" value={size} onChange={(e) => setSize(e.target.value)} />
+          <span>Size by</span>
+          <select
+            value={sizeMode}
+            onChange={(e) => {
+              const mode = e.target.value as SizeMode;
+              setSizeMode(mode);
+              setSizeValue(mode === 'usd' ? '500' : mode === 'risk' ? '25' : '');
+            }}
+          >
+            <option value="usd">Amount in USD</option>
+            <option value="base">Amount in {base}</option>
+            <option value="risk">Risk: max loss in USD</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>{sizeMode === 'risk' ? 'Lose at most (USD)' : sizeMode === 'usd' ? 'Amount (USD)' : `Size (${base})`}</span>
+          <input type="number" min="0" step="any" value={sizeValue} onChange={(e) => setSizeValue(e.target.value)} />
         </label>
         <label className="field">
           <span>Entry price</span>
@@ -112,7 +173,7 @@ export function TradePlanForm({ network, sign, sender, product, bid, ask, onCrea
             type="number"
             min="0"
             step="any"
-            placeholder={bid ? (bid * (side === 'long' ? 0.98 : 1.02)).toFixed(0) : ''}
+            placeholder={defaultEntry ? priceInputValue(defaultEntry, tick) : ''}
             value={entry}
             onChange={(e) => setEntry(e.target.value)}
           />
@@ -131,31 +192,40 @@ export function TradePlanForm({ network, sign, sender, product, bid, ask, onCrea
         </label>
       </div>
 
-      {preview && (
+      {sizeMode === 'risk' && (
+        <p className="muted" style={{ marginTop: '0.5rem' }}>
+          Nadobot sizes the position so that if the stop-loss is hit, you lose about the amount you entered, before fees.
+        </p>
+      )}
+
+      {preview && lots > 0 && (
         <div className="kv">
           <div>
             <span>Entry</span>
-            {side === 'long' ? 'Buy' : 'Sell'} {Math.abs(fromX18(preview.amount))} @ {usd(fromX18(preview.entryX18))}
-          </div>
-          <div>
-            <span>Stop-loss triggers at</span>
-            {usd(fromX18(preview.stopX18))}
-          </div>
-          <div>
-            <span>Take-profit triggers at</span>
-            {usd(fromX18(preview.takeProfitX18))}
+            {isLong ? 'Buy' : 'Sell'} {lots} {base} @ {price(entryX18Price)}
           </div>
           <div>
             <span>Order value</span>
             {usd(notional)}
           </div>
+          <div>
+            <span>Stop-loss at {price(fromX18(preview.stopX18))}</span>
+            <span style={{ color: 'var(--danger)' }}>−{usd(lossAtStop)}</span>
+          </div>
+          <div>
+            <span>Take-profit at {price(fromX18(preview.takeProfitX18))}</span>
+            <span style={{ color: 'var(--success)' }}>+{usd(profitAtTarget)}</span>
+          </div>
         </div>
       )}
 
       {warning && <div className="notice error">{warning}</div>}
+      {preview && lots > 0 && !warning && (
+        <RiskPreview account={account} risk={risk} productId={product.product_id} priceIncrementX18={tick} />
+      )}
 
       <div className="form-row">
-        <button className="btn btn-primary" onClick={submit} disabled={!preview || busy || Boolean(warning)}>
+        <button className="btn btn-primary" onClick={submit} disabled={!preview || busy || blocked}>
           {busy ? 'Confirm the 3 signatures in your wallet…' : 'Create plan'}
         </button>
       </div>

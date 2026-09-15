@@ -994,3 +994,119 @@ button:disabled {
     transform: rotate(90deg);
   }
 }
+
+/* Market picker */
+.market-picker {
+  position: relative;
+}
+
+.market-picker-button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  padding: 0.55rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--glass-border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.market-picker-button:hover,
+.market-picker-button[aria-expanded='true'] {
+  border-color: var(--accent-color);
+}
+
+.market-picker-button .muted {
+  font-size: 0.85rem;
+}
+
+.market-picker-menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  width: min(18rem, calc(100vw - 2rem));
+  padding: 0.5rem;
+  background: var(--bg-secondary);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.market-picker-menu input {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--glass-border);
+  background: var(--bg-primary, #0f1115);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.market-picker-menu input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+.market-picker-menu ul {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.market-picker-menu li {
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.market-picker-menu li .muted {
+  font-weight: 400;
+  font-size: 0.8rem;
+}
+
+.market-picker-menu li.active {
+  background: var(--glass-border);
+}
+
+.market-picker-menu li.current {
+  color: var(--accent-color);
+}
+
+.market-picker-menu li.market-empty {
+  cursor: default;
+  font-weight: 400;
+}
+
+/* Risk preview */
+.risk-preview {
+  margin-top: 1.25rem;
+  padding: 1rem 1.1rem;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: var(--bg-secondary);
+}
+
+.risk-preview .kv {
+  margin-top: 0.5rem;
+}
+
+.risk-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.risk-note {
+  margin-top: 1rem;
+}
+
+.notice.warn {
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
+}

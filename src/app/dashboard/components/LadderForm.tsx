@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  assessTradeRisk,
   cancelLadder,
+  formatPrice,
   fromX18,
   LADDER_MAX_RUNGS,
   LADDER_MAX_TAKE_PROFITS,
@@ -10,14 +12,18 @@ import {
   openLadderRungs,
   placeLadder,
   planLadder,
+  priceInputValue,
+  type AccountRisk,
   type LadderInput,
   type NadoNetwork,
   type PlacedOrder,
   type ProductSymbol,
   type SignTypedDataAsync,
 } from '@/lib/nado';
+import { RiskPreview } from './RiskPreview';
 
 interface Props {
+  account: AccountRisk | null;
   network: NadoNetwork;
   sign: SignTypedDataAsync;
   sender: `0x${string}`;
@@ -87,9 +93,9 @@ const DEFAULT_TAKE_PROFITS = [
  * Laddered entry: several limit orders spread across a price range, so the trader builds a position as price moves
  * instead of betting on one level. Scaled take-profits close it in parts, and one stop-loss protects the whole ladder.
  */
-export function LadderForm({ network, sign, sender, product, bid, ask, onCreated }: Props) {
+export function LadderForm({ account, network, sign, sender, product, bid, ask, onCreated }: Props) {
   const [side, setSide] = useState<'long' | 'short'>('long');
-  const [unit, setUnit] = useState<'usd' | 'base'>('usd');
+  const [unit, setUnit] = useState<'usd' | 'base' | 'risk'>('usd');
   const [amount, setAmount] = useState('1000');
   const [rungs, setRungs] = useState('4');
   const [nearPrice, setNearPrice] = useState('');
@@ -106,6 +112,8 @@ export function LadderForm({ network, sign, sender, product, bid, ask, onCreated
 
   const isLong = side === 'long';
   const base = product.symbol.replace('-PERP', '');
+  const tick = product.price_increment_x18;
+  const price = (n: number) => formatPrice(n, tick);
   // Defaults: start 1% past the market and step 5% deep, so the ladder rests on the book instead of filling at once.
   const market = isLong ? bid : ask;
   const defaultNear = market ? market * (isLong ? 0.99 : 1.01) : 0;
@@ -117,7 +125,8 @@ export function LadderForm({ network, sign, sender, product, bid, ask, onCreated
     const value = Number(amount);
     if (!value || !near) return null;
     const n = Math.max(Math.floor(Number(rungs) || 1), 1);
-    // A USD amount is converted at the size-weighted average rung price, so the ladder costs what was typed.
+    // A USD amount is converted at the size-weighted average rung price, so the ladder costs what was typed. A risk amount
+    // becomes the size that loses that much if every entry fills and the stop is hit.
     const weights = Array.from({ length: n }, (_, i) => (distribution === 'weighted' ? i + 1 : 1));
     const avgPrice =
       n > 1 ? weights.reduce((a, w, i) => a + w * (near + ((far - near) * i) / (n - 1)), 0) / weights.reduce((a, b) => a + b, 0) : near;
@@ -125,7 +134,7 @@ export function LadderForm({ network, sign, sender, product, bid, ask, onCreated
       productId: product.product_id,
       sender,
       side,
-      totalSize: unit === 'usd' ? value / avgPrice : value,
+      totalSize: unit === 'usd' ? value / avgPrice : unit === 'risk' ? value / (avgPrice * (Number(stopLoss) / 100) || Infinity) : value,
       rungs: Number(rungs),
       nearPrice: near,
       farPrice: far,
@@ -147,6 +156,16 @@ export function LadderForm({ network, sign, sender, product, bid, ask, onCreated
   const maxLoss = plan ? Math.abs(plan.averageEntry - stopPrice) * size : 0;
   const allTargets = plan ? plan.takeProfits.reduce((a, t) => a + Math.abs(fromX18(t.triggerX18) - plan.averageEntry) * abs(t.amount), 0) : 0;
   const busy = progress !== null;
+  const risk =
+    account && plan && size > 0 && plan.rungs.every((r) => r.priceX18 > 0n)
+      ? assessTradeRisk(account, {
+          productId: product.product_id,
+          fills: plan.rungs.map((r) => ({ productId: product.product_id, amount: fromX18(r.amount), price: fromX18(r.priceX18) })),
+          stopPrice,
+          priceIncrementX18: tick,
+        })
+      : null;
+  const blocked = !plan || plan.errors.length > 0 || Boolean(risk?.errors.length);
 
   function persist(ladder: SavedLadder) {
     const next = [ladder, ...loadLadders().filter((l) => l.id !== ladder.id)];
@@ -155,7 +174,7 @@ export function LadderForm({ network, sign, sender, product, bid, ask, onCreated
   }
 
   async function submit() {
-    if (!input || !plan || plan.errors.length) return;
+    if (!input || !plan || blocked) return;
     setMessage(null);
     setProgress({ signed: 0, total: plan.signatures });
     const record = (orders: PlacedOrder[], complete: boolean): SavedLadder => ({
@@ -233,14 +252,22 @@ export function LadderForm({ network, sign, sender, product, bid, ask, onCreated
           </select>
         </label>
         <label className="field">
-          <span>Total amount</span>
+          <span>{unit === 'risk' ? 'Lose at most (USD)' : 'Total amount'}</span>
           <input type="number" min="0" step="any" value={amount} onChange={(e) => setAmount(e.target.value)} />
         </label>
         <label className="field">
-          <span>In</span>
-          <select value={unit} onChange={(e) => setUnit(e.target.value as 'usd' | 'base')}>
+          <span>Size by</span>
+          <select
+            value={unit}
+            onChange={(e) => {
+              const next = e.target.value as 'usd' | 'base' | 'risk';
+              setUnit(next);
+              setAmount(next === 'usd' ? '1000' : next === 'risk' ? '50' : '');
+            }}
+          >
             <option value="usd">USD</option>
             <option value="base">{base}</option>
+            <option value="risk">Risk (max loss)</option>
           </select>
         </label>
         <label className="field">
@@ -249,7 +276,7 @@ export function LadderForm({ network, sign, sender, product, bid, ask, onCreated
         </label>
         <label className="field">
           <span>First entry price</span>
-          <input type="number" min="0" step="any" placeholder={defaultNear ? defaultNear.toFixed(0) : ''} value={nearPrice} onChange={(e) => setNearPrice(e.target.value)} />
+          <input type="number" min="0" step="any" placeholder={defaultNear ? priceInputValue(defaultNear, tick) : ''} value={nearPrice} onChange={(e) => setNearPrice(e.target.value)} />
         </label>
         <label className="field">
           <span>Last entry price</span>
@@ -258,7 +285,7 @@ export function LadderForm({ network, sign, sender, product, bid, ask, onCreated
             min="0"
             step="any"
             disabled={Number(rungs) <= 1}
-            placeholder={defaultFar ? defaultFar.toFixed(0) : ''}
+            placeholder={defaultFar ? priceInputValue(defaultFar, tick) : ''}
             value={farPrice}
             onChange={(e) => setFarPrice(e.target.value)}
           />
@@ -341,7 +368,7 @@ export function LadderForm({ network, sign, sender, product, bid, ask, onCreated
                     <td>Entry {i + 1}</td>
                     <td style={{ color: isLong ? 'var(--success)' : 'var(--danger)' }}>{isLong ? 'Buy' : 'Sell'}</td>
                     <td>{abs(r.amount)}</td>
-                    <td>{usd(fromX18(r.priceX18))}</td>
+                    <td>{price(fromX18(r.priceX18))}</td>
                     <td>{usd(abs(r.amount) * fromX18(r.priceX18))}</td>
                   </tr>
                 ))}
@@ -351,7 +378,7 @@ export function LadderForm({ network, sign, sender, product, bid, ask, onCreated
                     <td style={{ color: isLong ? 'var(--danger)' : 'var(--success)' }}>{isLong ? 'Sell' : 'Buy'}</td>
                     <td>{abs(t.amount)}</td>
                     <td>
-                      {isLong ? '≥' : '≤'} {usd(fromX18(t.triggerX18))}
+                      {isLong ? '≥' : '≤'} {price(fromX18(t.triggerX18))}
                     </td>
                     <td>{usd(abs(t.amount) * fromX18(t.triggerX18))}</td>
                   </tr>
@@ -361,7 +388,7 @@ export function LadderForm({ network, sign, sender, product, bid, ask, onCreated
                   <td style={{ color: isLong ? 'var(--danger)' : 'var(--success)' }}>{isLong ? 'Sell' : 'Buy'}</td>
                   <td>{size}</td>
                   <td>
-                    {isLong ? '≤' : '≥'} {usd(stopPrice)}
+                    {isLong ? '≤' : '≥'} {price(stopPrice)}
                   </td>
                   <td>{usd(size * stopPrice)}</td>
                 </tr>
@@ -371,7 +398,7 @@ export function LadderForm({ network, sign, sender, product, bid, ask, onCreated
           <div className="kv">
             <div>
               <span>Average entry if all fill</span>
-              {usd(plan.averageEntry)}
+              {price(plan.averageEntry)}
             </div>
             <div>
               <span>Loss at stop (all filled)</span>
@@ -394,9 +421,12 @@ export function LadderForm({ network, sign, sender, product, bid, ask, onCreated
       )}
 
       {plan?.errors.length ? <div className="notice error">{plan.errors[0]}</div> : null}
+      {plan && !plan.errors.length && size > 0 && (
+        <RiskPreview account={account} risk={risk} productId={product.product_id} priceIncrementX18={tick} />
+      )}
 
       <div className="form-row">
-        <button className="btn btn-primary" onClick={submit} disabled={!plan || plan.errors.length > 0 || busy}>
+        <button className="btn btn-primary" onClick={submit} disabled={blocked || busy}>
           {progress
             ? `Signature ${Math.min(progress.signed + 1, progress.total)} of ${progress.total}: confirm in your wallet…`
             : plan
@@ -532,7 +562,7 @@ function LadderRow({
       <span className="activity-dot" aria-hidden />
       <div style={{ flex: 1 }}>
         <p>
-          {ladder.side === 'long' ? 'Long' : 'Short'} ladder · {ladder.size} {ladder.symbol.replace('-PERP', '')} · avg {usd(ladder.averageEntry)}
+          {ladder.side === 'long' ? 'Long' : 'Short'} ladder · {ladder.size} {ladder.symbol.replace('-PERP', '')} · avg {formatPrice(ladder.averageEntry)}
           {ladder.complete ? '' : ` · partial (${rungsPlaced} of ${ladder.rungs} entries placed)`}
         </p>
         <div className="progress" aria-hidden>

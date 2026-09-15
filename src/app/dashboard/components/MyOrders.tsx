@@ -5,6 +5,7 @@ import {
   cancelLadder,
   cancelOrders,
   fetchOpenOrders,
+  formatPrice,
   fromX18,
   isReduceOnly,
   describeTwap,
@@ -38,7 +39,6 @@ interface Row {
   ladder?: SavedLadder;
 }
 
-const usd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
 // Plain statuses are strings; a running TWAP reports {twap_executing: {current_execution, total_executions}}.
 function triggerStatus(status: unknown) {
@@ -49,12 +49,12 @@ function triggerStatus(status: unknown) {
   return typeof status === 'string' ? status.replace(/_/g, ' ') : 'Active';
 }
 
-function describeTrigger(t: TriggerOrderEntry): Pick<Row, 'kind' | 'price' | 'linkedTo'> {
+function describeTrigger(t: TriggerOrderEntry, tick: string): Pick<Row, 'kind' | 'price' | 'linkedTo'> {
   if (t.order.trigger?.time_trigger) {
     const { executions, intervalSeconds } = describeTwap(t);
     const every = intervalSeconds < 3600 ? `${Math.round(intervalSeconds / 60)} min` : `${(intervalSeconds / 3600).toFixed(1)} h`;
     const limit = fromX18(t.order.order.priceX18);
-    return { kind: `TWAP · ${executions}× every ${every}`, price: `${BigInt(t.order.order.amount) > 0n ? '≤' : '≥'} ${usd(limit)}` };
+    return { kind: `TWAP · ${executions}× every ${every}`, price: `${BigInt(t.order.order.amount) > 0n ? '≤' : '≥'} ${formatPrice(limit, tick)}` };
   }
   const req = t.order.trigger?.price_trigger?.price_requirement ?? {};
   const [condition, value] = (Object.entries(req)[0] ?? ['', '0']) as [string, string];
@@ -68,7 +68,7 @@ function describeTrigger(t: TriggerOrderEntry): Pick<Row, 'kind' | 'price' | 'li
   }
   return {
     kind,
-    price: `${above ? '≥' : '≤'} ${usd(fromX18(value))}`,
+    price: `${above ? '≥' : '≤'} ${formatPrice(fromX18(value), tick)}`,
     linkedTo: t.order.trigger?.price_trigger?.dependency?.digest,
   };
 }
@@ -94,7 +94,7 @@ export function MyOrders({ network, sign, sender, product, refreshKey }: Props) 
           kind: 'Limit order',
           side: amount > 0n ? 'Buy' : 'Sell',
           size: Math.abs(fromX18(o.unfilled_amount ?? o.amount)),
-          price: usd(fromX18(o.price_x18)),
+          price: formatPrice(fromX18(o.price_x18), product.price_increment_x18),
           status: 'Resting on orderbook',
           service: 'gateway',
           digest: o.digest,
@@ -104,7 +104,7 @@ export function MyOrders({ network, sign, sender, product, refreshKey }: Props) 
         const amount = BigInt(t.order.order.amount);
         return {
           key: t.order.digest,
-          ...describeTrigger(t),
+          ...describeTrigger(t, product.price_increment_x18),
           side: amount > 0n ? 'Buy' : 'Sell',
           size: Math.abs(fromX18(amount)),
           status: triggerStatus(t.status),

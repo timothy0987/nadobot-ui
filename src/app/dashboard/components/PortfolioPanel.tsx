@@ -9,6 +9,9 @@ import {
   fetchOraclePrices,
   fetchPositions,
   fetchSubaccountInfo,
+  formatPrice,
+  liquidationPrice,
+  parseAccountRisk,
   positionNetPnl,
   summarizeFills,
   type Match,
@@ -36,7 +39,6 @@ const usd = (n: number, digits = 2) => `$${n.toLocaleString(undefined, { minimum
 const signedUsd = (n: number) => `${n < 0 ? '−' : n > 0 ? '+' : ''}${usd(Math.abs(n))}`;
 const compactUsd = (n: number) => `$${Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(n)}`;
 const pnlColor = (n: number) => (n > 0.005 ? 'var(--success)' : n < -0.005 ? 'var(--danger)' : undefined);
-const price = (n: number) => usd(n, n >= 100 ? 2 : 4);
 
 function duration(seconds: number) {
   if (seconds < 3600) return `${Math.max(Math.round(seconds / 60), 1)} min`;
@@ -51,7 +53,7 @@ function duration(seconds: number) {
 export function PortfolioPanel({ network, sender, symbols }: Props) {
   const [range, setRange] = useState<Range>('7d');
   const [tab, setTab] = useState<'open' | 'history'>('open');
-  const [open, setOpen] = useState<OpenPositionView[] | null>(null);
+  const [open, setOpen] = useState<(OpenPositionView & { liquidationPrice: number | null })[] | null>(null);
   const [fills, setFills] = useState<{ fills: Match[]; truncated: boolean; since: number } | null>(null);
   const [lifetime, setLifetime] = useState<{ volume: number; trades: number } | null>(null);
   const [history, setHistory] = useState<{ positions: PositionRecord[]; nextIdx: string | null } | null>(null);
@@ -61,6 +63,7 @@ export function PortfolioPanel({ network, sender, symbols }: Props) {
   const bySymbolId = Object.fromEntries(Object.values(symbols).map((s) => [s.product_id, s]));
   const name = (productId: number) => bySymbolId[productId]?.symbol ?? `Market ${productId}`;
   const isPerp = (productId: number) => bySymbolId[productId]?.type === 'perp';
+  const priceOf = (productId: number) => (n: number) => formatPrice(n, bySymbolId[productId]?.price_increment_x18);
 
   // Reset when the wallet or network changes, so one account's numbers never show under another.
   useEffect(() => {
@@ -78,7 +81,8 @@ export function PortfolioPanel({ network, sender, symbols }: Props) {
         fetchPositions(network, sender, { open: true, limit: 100 }),
         fetchOraclePrices(network),
       ]);
-      setOpen(buildOpenPositions(info, records.positions, marks));
+      const account = parseAccountRisk(info);
+      setOpen(buildOpenPositions(info, records.positions, marks).map((p) => ({ ...p, liquidationPrice: account ? liquidationPrice(account, p.productId) : null })));
     } catch (e: any) {
       setError(e.message);
     }
@@ -217,6 +221,7 @@ export function PortfolioPanel({ network, sender, symbols }: Props) {
                   <th>Mark</th>
                   <th>Value</th>
                   <th>Unrealized PnL</th>
+                  <th>Est. liq. price</th>
                   <th>Funding</th>
                 </tr>
               </thead>
@@ -226,12 +231,13 @@ export function PortfolioPanel({ network, sender, symbols }: Props) {
                     <td>{name(p.productId)}</td>
                     <td style={{ color: p.long ? 'var(--success)' : 'var(--danger)' }}>{p.long ? 'Long' : 'Short'}</td>
                     <td>{p.size}</td>
-                    <td>{price(p.entryPrice)}</td>
-                    <td>{price(p.markPrice)}</td>
+                    <td>{priceOf(p.productId)(p.entryPrice)}</td>
+                    <td>{priceOf(p.productId)(p.markPrice)}</td>
                     <td>{usd(p.value)}</td>
                     <td style={{ color: pnlColor(p.unrealizedPnl) }}>
                       {signedUsd(p.unrealizedPnl)} <span className="muted">({p.unrealizedPercent >= 0 ? '+' : ''}{p.unrealizedPercent.toFixed(2)}%)</span>
                     </td>
+                    <td>{p.liquidationPrice === null ? 'None' : priceOf(p.productId)(p.liquidationPrice)}</td>
                     <td style={{ color: pnlColor(p.funding) }}>{signedUsd(p.funding)}</td>
                   </tr>
                 ))}
@@ -272,7 +278,7 @@ export function PortfolioPanel({ network, sender, symbols }: Props) {
                       <td style={{ color: p.long ? 'var(--success)' : 'var(--danger)' }}>{p.long ? 'Long' : 'Short'}</td>
                       <td>{p.maxSize}</td>
                       <td>
-                        {price(p.entryPrice)} → {price(p.exitPrice)}
+                        {priceOf(p.productId)(p.entryPrice)} → {priceOf(p.productId)(p.exitPrice)}
                       </td>
                       <td>{duration(p.updatedAt - p.openedAt)}</td>
                       <td>{signedUsd(p.funding - p.fees)}</td>

@@ -18,6 +18,13 @@ All three live on Nado's servers, so the plan runs whether or not the dashboard 
 
 **Why not a shared bot key?** Nado's [linked signers](https://docs.nado.xyz/developer-resources/get-started/linked-signers) have full permissions, including withdrawals. A single bot key linked to many traders' accounts would let one server compromise drain every account. Trade plans avoid that entirely: nobody but the trader ever holds a key that controls their funds.
 
+## Markets, risk checks and sizing by risk
+
+- **Every live Nado perp market**, from a searchable picker that remembers your choice (BTC, ETH and SOL first). Prices display and round at each market's own tick, down to $0.000001.
+- **Risk preview on every order** (trade plans, ladders, TWAP/DCA), assuming it fully fills: estimated liquidation price, account leverage before and after, and margin used and left. It uses Nado's health model: a perp contributes `amount × price × weight + v_quote`, with initial weights for margin and maintenance weights for liquidation. The projection matches Nado's own `subaccount_info` `apply_delta` simulation exactly. Margin is judged at the order's fill price, since a limit entry only fills once the market reaches it; the liquidation price doesn't depend on that choice.
+- **Blocked before signing**: orders that would take initial health below zero (Nado would reject them), and stop-losses beyond the estimated liquidation price. Warnings appear when liquidation would be within 10% of the price, or leverage would reach 10x.
+- **Size by risk** in trade plans and ladders: enter the most you're willing to lose, and the size is `risk ÷ distance to the stop`, rounded down to the lot size.
+
 ## Portfolio: positions, PnL and volume
 
 The connected wallet's trading on Nado, across every market and every app it trades from. It's all public gateway and indexer data, so it needs no signature.

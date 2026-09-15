@@ -145,6 +145,31 @@ export function roundToIncrement(value: bigint, increment: bigint, mode: RoundMo
 export const toX18 = (value: number) => BigInt(Math.round(value * 1e9)) * 10n ** 9n;
 export const fromX18 = (value: bigint | string) => Number(BigInt(value)) / 1e18;
 
+/** Decimal places in a market's price tick or lot size (x18), e.g. 0.01 -> 2, 1 -> 0. */
+export function incrementDecimals(incrementX18: bigint | string): number {
+  let increment = BigInt(incrementX18);
+  if (increment <= 0n) return 2;
+  let decimals = 18;
+  while (decimals > 0 && increment % 10n === 0n) {
+    increment /= 10n;
+    decimals--;
+  }
+  return decimals;
+}
+
+/**
+ * A USD price with the precision its market trades at (BTC to the dollar, small caps to six decimals). Without a
+ * tick, precision follows the size of the number so sub-dollar prices never round to $0.
+ */
+export function formatPrice(value: number, priceIncrementX18?: bigint | string): string {
+  const abs = Math.abs(value);
+  const decimals = priceIncrementX18 !== undefined ? incrementDecimals(priceIncrementX18) : abs >= 1000 ? 2 : abs >= 1 ? 4 : 6;
+  return `${value < 0 ? '-' : ''}$${abs.toLocaleString('en-US', { maximumFractionDigits: decimals })}`;
+}
+
+/** A price as an input value (no grouping), at the market's tick precision. */
+export const priceInputValue = (value: number, priceIncrementX18: bigint | string) => value.toFixed(incrementDecimals(priceIncrementX18));
+
 /* ---------------------------------- queries ---------------------------------- */
 
 async function gatewayQuery(network: NadoNetwork, body: object) {
@@ -827,8 +852,8 @@ export function planLadder(p: LadderInput): LadderPlan {
 
   // A rung on the wrong side of the market would fill immediately as a taker order instead of waiting for the price.
   const near = fromX18(prices[0]);
-  if (near > 0 && isLong && p.ask && near >= p.ask) errors.push(`The first rung (${usdText(near)}) is at or above the ask (${usdText(p.ask)}), so it would fill immediately. Start the ladder below the market.`);
-  if (near > 0 && !isLong && p.bid && near <= p.bid) errors.push(`The first rung (${usdText(near)}) is at or below the bid (${usdText(p.bid)}), so it would fill immediately. Start the ladder above the market.`);
+  if (near > 0 && isLong && p.ask && near >= p.ask) errors.push(`The first rung (${formatPrice(near, p.priceIncrementX18)}) is at or above the ask (${formatPrice(p.ask, p.priceIncrementX18)}), so it would fill immediately. Start the ladder below the market.`);
+  if (near > 0 && !isLong && p.bid && near <= p.bid) errors.push(`The first rung (${formatPrice(near, p.priceIncrementX18)}) is at or below the bid (${formatPrice(p.bid, p.priceIncrementX18)}), so it would fill immediately. Start the ladder above the market.`);
 
   const averageEntry = totalLots > 0n ? rungs.reduce((a, r) => a + valueOf(r.amount, r.priceX18), 0) / Math.abs(fromX18(amount)) : near;
   const worse = isLong ? 1 - EXIT_SLIPPAGE : 1 + EXIT_SLIPPAGE;
@@ -840,7 +865,7 @@ export function planLadder(p: LadderInput): LadderPlan {
   const last = fromX18(prices[prices.length - 1]);
   if (near > 0 && p.stopLossPercent > 0 && (isLong ? fromX18(stop.triggerX18) >= last : fromX18(stop.triggerX18) <= last)) {
     errors.push(
-      `The stop-loss (${usdText(fromX18(stop.triggerX18))}) is ${isLong ? 'at or above' : 'at or below'} your last rung (${usdText(last)}), so it could close the position before the ladder fills. Widen the stop-loss or narrow the ladder.`
+      `The stop-loss (${formatPrice(fromX18(stop.triggerX18), p.priceIncrementX18)}) is ${isLong ? 'at or above' : 'at or below'} your last rung (${formatPrice(last, p.priceIncrementX18)}), so it could close the position before the ladder fills. Widen the stop-loss or narrow the ladder.`
     );
   }
 
@@ -854,7 +879,7 @@ export function planLadder(p: LadderInput): LadderPlan {
       if (!(t.percent > 0) || !(t.sharePercent > 0)) return;
       const trigger = fromX18(t.triggerX18);
       if (isLong ? trigger <= near : trigger >= near) {
-        errors.push(`Take-profit ${i + 1} (${usdText(trigger)}) is ${isLong ? 'at or below' : 'at or above'} your first rung (${usdText(near)}), so it could close at a loss. Move it further out.`);
+        errors.push(`Take-profit ${i + 1} (${formatPrice(trigger, p.priceIncrementX18)}) is ${isLong ? 'at or below' : 'at or above'} your first rung (${formatPrice(near, p.priceIncrementX18)}), so it could close at a loss. Move it further out.`);
       } else if (totalLots > 0n && valueOf(t.amount, t.triggerX18) < min) {
         errors.push(`Take-profit ${i + 1} closes only about ${usdText(valueOf(t.amount, t.triggerX18))}, below this market's ${usdText(min)} minimum, so it would fail when it fires. Give it a bigger share or use fewer targets.`);
       }
@@ -1145,4 +1170,202 @@ export function summarizeFills(fills: Match[], sinceSeconds: number, nowSeconds:
   summary.netPnl = summary.realizedPnl - summary.fees;
   summary.buckets = [...buckets.values()].sort((a, b) => a.start - b.start);
   return summary;
+}
+
+/* ---------------------------------- account risk ---------------------------------- */
+
+export interface RiskWeights {
+  /** Price Nado values the position at (the oracle price). */
+  price: number;
+  longInitial: number;
+  shortInitial: number;
+  longMaintenance: number;
+  shortMaintenance: number;
+}
+
+export interface AccountRisk {
+  /** Account value: Nado's unweighted health (collateral plus unrealized PnL). */
+  equity: number;
+  /** Initial health: margin left for new positions. Nado rejects trades that would take it below 0. */
+  availableMargin: number;
+  /** Maintenance health: the account can be liquidated once this falls below 0. */
+  maintenanceMargin: number;
+  perps: Record<number, { amount: number; vQuote: number }>;
+  weights: Record<number, RiskWeights>;
+}
+
+/** Pure: reads health, positions and risk weights out of a subaccount_info response. Null if the account doesn't exist. */
+export function parseAccountRisk(info: any): AccountRisk | null {
+  if (!info?.exists || !Array.isArray(info.healths) || info.healths.length < 3) return null;
+  const weights: AccountRisk['weights'] = {};
+  for (const p of info.perp_products ?? []) {
+    weights[p.product_id] = {
+      price: fromX18(p.risk?.price_x18 ?? p.oracle_price_x18),
+      longInitial: fromX18(p.risk.long_weight_initial_x18),
+      shortInitial: fromX18(p.risk.short_weight_initial_x18),
+      longMaintenance: fromX18(p.risk.long_weight_maintenance_x18),
+      shortMaintenance: fromX18(p.risk.short_weight_maintenance_x18),
+    };
+  }
+  const perps: AccountRisk['perps'] = {};
+  for (const b of info.perp_balances ?? []) {
+    perps[b.product_id] = { amount: fromX18(b.balance.amount), vQuote: fromX18(b.balance.v_quote_balance) };
+  }
+  return {
+    availableMargin: fromX18(info.healths[0].health),
+    maintenanceMargin: fromX18(info.healths[1].health),
+    equity: fromX18(info.healths[2].health),
+    perps,
+    weights,
+  };
+}
+
+/** Highest leverage Nado allows on a market, from its initial long weight (0.95 -> 20x). */
+export const maxLeverage = (w: RiskWeights) => (w.longInitial < 1 ? 1 / (1 - w.longInitial) : 1);
+
+// A perp's contribution to each health: amount x price x weight + v_quote, the weight picked by the position's side.
+// Checked against Nado's own health_contributions and its apply_delta simulation.
+function perpContribution(amount: number, vQuote: number, w: RiskWeights) {
+  const long = amount >= 0;
+  return {
+    initial: amount * w.price * (long ? w.longInitial : w.shortInitial) + vQuote,
+    maintenance: amount * w.price * (long ? w.longMaintenance : w.shortMaintenance) + vQuote,
+    unweighted: amount * w.price + vQuote,
+  };
+}
+
+export interface ProjectedFill {
+  productId: number;
+  /** Signed base amount: positive buys, negative sells. */
+  amount: number;
+  price: number;
+}
+
+/** Pure: the account as it would be if these fills happened (before fees), the same way Nado's health engine counts them. */
+export function projectRisk(account: AccountRisk, fills: ProjectedFill[]): AccountRisk {
+  const next: AccountRisk = { ...account, perps: { ...account.perps } };
+  for (const f of fills) {
+    const w = account.weights[f.productId];
+    if (!w || !f.amount) continue;
+    const before = next.perps[f.productId] ?? { amount: 0, vQuote: 0 };
+    const after = { amount: before.amount + f.amount, vQuote: before.vQuote - f.amount * f.price };
+    const b = perpContribution(before.amount, before.vQuote, w);
+    const a = perpContribution(after.amount, after.vQuote, w);
+    next.availableMargin += a.initial - b.initial;
+    next.maintenanceMargin += a.maintenance - b.maintenance;
+    next.equity += a.unweighted - b.unweighted;
+    next.perps[f.productId] = after;
+  }
+  return next;
+}
+
+/** Pure: the account valued with one market's price moved to `price`, everything else unchanged. */
+export function repriceAccount(account: AccountRisk, productId: number, price: number): AccountRisk {
+  const w = account.weights[productId];
+  if (!w || !(price > 0)) return account;
+  const moved = { ...w, price };
+  const next: AccountRisk = { ...account, weights: { ...account.weights, [productId]: moved } };
+  const pos = account.perps[productId];
+  if (pos && pos.amount) {
+    const b = perpContribution(pos.amount, pos.vQuote, w);
+    const a = perpContribution(pos.amount, pos.vQuote, moved);
+    next.availableMargin += a.initial - b.initial;
+    next.maintenanceMargin += a.maintenance - b.maintenance;
+    next.equity += a.unweighted - b.unweighted;
+  }
+  return next;
+}
+
+/**
+ * Estimated mark price at which the account could be liquidated, moving only this market's price. Maintenance health
+ * changes by amount x maintenance weight per $1 of price, so it reaches 0 at price - health / (amount x weight).
+ * Null when there is no position, or a long that stays solvent all the way to $0.
+ */
+export function liquidationPrice(account: AccountRisk, productId: number): number | null {
+  const pos = account.perps[productId];
+  const w = account.weights[productId];
+  if (!pos || !w || Math.abs(pos.amount) < 1e-12) return null;
+  const slope = pos.amount * (pos.amount > 0 ? w.longMaintenance : w.shortMaintenance);
+  const price = w.price - account.maintenanceMargin / slope;
+  if (account.maintenanceMargin <= 0) return w.price;
+  return price > 0 ? price : null;
+}
+
+/** Total perp exposure divided by account value. */
+export function accountLeverage(account: AccountRisk) {
+  const exposure = Object.entries(account.perps).reduce(
+    (sum, [id, p]) => sum + Math.abs(p.amount * (account.weights[Number(id)]?.price ?? 0)),
+    0
+  );
+  return account.equity > 0 ? exposure / account.equity : exposure > 0 ? Infinity : 0;
+}
+
+export interface TradeRisk {
+  after: AccountRisk;
+  leverage: number;
+  liquidationPrice: number | null;
+  /** Share of account value tied up as initial margin after the trade. */
+  marginUsedPercent: number;
+  errors: string[];
+  warnings: string[];
+}
+
+/**
+ * Pure: what a trade does to the account if it fully fills. Errors mean Nado would reject it (not enough margin) or the
+ * stop-loss sits past the liquidation price, so the account could be liquidated before the stop fires.
+ */
+export function assessTradeRisk(
+  account: AccountRisk,
+  trade: { productId: number; fills: ProjectedFill[]; stopPrice?: number; priceIncrementX18?: bigint | string }
+): TradeRisk {
+  // Limit orders fill only once the market reaches them, so judge margin at the last fill price rather than today's
+  // price. The liquidation price is the same either way; margin and leverage are what this makes realistic.
+  const fillMark = trade.fills.length ? trade.fills[trade.fills.length - 1].price : undefined;
+  const atFill = fillMark ? repriceAccount(account, trade.productId, fillMark) : account;
+  const after = projectRisk(atFill, trade.fills);
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const fmt = (n: number) => formatPrice(n, trade.priceIncrementX18);
+  const money = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+
+  if (after.availableMargin < 0) {
+    errors.push(
+      `Not enough margin: fully filled, this needs about ${money(-after.availableMargin)} more than your account would have available (${money(Math.max(atFill.availableMargin, 0))}). Reduce the size or deposit more on Nado.`
+    );
+  }
+
+  const liq = liquidationPrice(after, trade.productId);
+  const pos = after.perps[trade.productId];
+  const long = (pos?.amount ?? 0) > 0;
+  if (liq !== null && trade.stopPrice && trade.stopPrice > 0 && !errors.length) {
+    if (long ? trade.stopPrice <= liq : trade.stopPrice >= liq) {
+      errors.push(
+        `Your stop-loss (${fmt(trade.stopPrice)}) is ${long ? 'at or below' : 'at or above'} the estimated liquidation price (${fmt(liq)}), so you could be liquidated before it fires. Tighten the stop-loss or reduce the size.`
+      );
+    }
+  }
+
+  const mark = account.weights[trade.productId]?.price ?? 0;
+  if (liq !== null && mark > 0 && !errors.length) {
+    const distance = Math.abs(mark - liq) / mark;
+    if (distance < 0.1) warnings.push(`Liquidation would be only ${(distance * 100).toFixed(1)}% from the current price.`);
+  }
+  const leverage = accountLeverage(after);
+  if (leverage >= 10 && !errors.length) warnings.push(`Account leverage would be ${leverage.toFixed(1)}x. Small price moves will have a large effect.`);
+
+  return {
+    after,
+    leverage,
+    liquidationPrice: liq,
+    marginUsedPercent: after.equity > 0 ? Math.min(Math.max(((after.equity - after.availableMargin) / after.equity) * 100, 0), 100) : 100,
+    errors,
+    warnings,
+  };
+}
+
+/** Base size that loses `riskUsd` if price moves from `entry` to `stop` (before fees), rounded down to the lot size. */
+export function sizeForRisk(riskUsd: number, entry: number, stop: number, sizeIncrementX18: bigint | string): number {
+  const perUnit = Math.abs(entry - stop);
+  if (!(riskUsd > 0) || !(perUnit > 0)) return 0;
+  return fromX18(roundToIncrement(toX18(riskUsd / perUnit), BigInt(sizeIncrementX18), 'down'));
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAccount, useSignTypedData } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import {
@@ -11,7 +11,11 @@ import {
   fetchSymbols,
   fetchMarketPrice,
   extractPerpPosition,
+  formatPrice,
   fromX18,
+  liquidationPrice,
+  parseAccountRisk,
+  type AccountRisk,
   type PerpPosition,
   type ProductSymbol,
   type SignTypedDataAsync,
@@ -26,8 +30,10 @@ import { TwapForm } from './components/TwapForm';
 import { LadderForm } from './components/LadderForm';
 import { PortfolioPanel } from './components/PortfolioPanel';
 import { MainnetGate, NetworkSwitch, useDashboardNetwork } from './components/NetworkSwitch';
+import { MarketPicker, tradableMarkets } from './components/MarketPicker';
 
-const MARKETS = ['BTC-PERP', 'ETH-PERP'];
+const DEFAULT_MARKET = 'BTC-PERP';
+const MARKET_KEY = 'nadobot:market';
 const usd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
 export default function Dashboard() {
@@ -38,7 +44,8 @@ export default function Dashboard() {
   const sign = signTypedDataAsync as unknown as SignTypedDataAsync;
 
   const [symbols, setSymbols] = useState<Record<string, ProductSymbol>>({});
-  const [market, setMarket] = useState(MARKETS[0]);
+  const [market, setMarket] = useState(DEFAULT_MARKET);
+  const [account, setAccount] = useState<AccountRisk | null>(null);
   const [exists, setExists] = useState<boolean | null>(null);
   const [usdt0, setUsdt0] = useState<number | null>(null);
   const [position, setPosition] = useState<PerpPosition | null>(null);
@@ -46,10 +53,28 @@ export default function Dashboard() {
   const [ordersRefreshKey, setOrdersRefreshKey] = useState(0);
 
   const sender = useMemo(() => (address ? subaccountToBytes32(address, 'default') : null), [address]);
-  const product = symbols[market];
+  const markets = useMemo(() => tradableMarkets(symbols), [symbols]);
+  const product = markets.find((m) => m.symbol === market);
+
+  // Remember the last market; fall back to BTC when it isn't tradable on this network.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(MARKET_KEY);
+      if (saved) setMarket(saved);
+    } catch {}
+  }, []);
+  useEffect(() => {
+    if (markets.length && !markets.some((m) => m.symbol === market)) setMarket(DEFAULT_MARKET);
+  }, [markets, market]);
+  const chooseMarket = (symbol: string) => {
+    setMarket(symbol);
+    try {
+      localStorage.setItem(MARKET_KEY, symbol);
+    } catch {}
+  };
 
   const bot = useBotStatus();
-  const marketIds = useMemo(() => MARKETS.map((m) => symbols[m]?.product_id).filter((id): id is number => id !== undefined), [symbols]);
+  const marketIds = useMemo(() => markets.map((m) => m.product_id), [markets]);
   const symbolById = useMemo(() => Object.fromEntries(Object.values(symbols).map((s) => [s.product_id, s.symbol])), [symbols]);
   const walletFills = useWalletFills(network, sender, marketIds);
   const push = usePush(sender, network.chainId);
@@ -62,19 +87,34 @@ export default function Dashboard() {
     setExists(null);
     setUsdt0(null);
     setPosition(null);
+    setAccount(null);
     fetchSymbols(network).then(setSymbols).catch((e) => console.error('Failed to fetch symbols', e));
   }, [network, sender]);
 
+  // A new market must never be priced with the previous market's quote, even for one render, and a response for the
+  // previous market that arrives late must be dropped.
+  const currentProductId = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    currentProductId.current = product?.product_id;
+    setQuote(null);
+    setPosition(null);
+  }, [product?.product_id]);
+
   const refresh = useCallback(async () => {
     if (!product) return;
-    fetchMarketPrice(network, product.product_id).then(setQuote).catch(() => setQuote(null));
+    const productId = product.product_id;
+    const stillCurrent = () => currentProductId.current === productId;
+    fetchMarketPrice(network, productId)
+      .then((q) => stillCurrent() && setQuote(q))
+      .catch(() => stillCurrent() && setQuote(null));
     if (!sender) return;
     try {
       const info = await fetchSubaccountInfo(network, sender);
       setExists(info.exists);
       const balance = info.spot_balances.find((b: any) => b.product_id === 0);
       setUsdt0(balance ? fromX18(balance.balance.amount) : 0);
-      setPosition(extractPerpPosition(info, product.product_id));
+      if (stillCurrent()) setPosition(extractPerpPosition(info, productId));
+      setAccount(parseAccountRisk(info));
     } catch (e) {
       console.error('Failed to fetch Nado data', e);
     }
@@ -98,16 +138,7 @@ export default function Dashboard() {
         </div>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <NetworkSwitch network={network} select={select} switching={switching} />
-          <label className="field" style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <span>Market</span>
-            <select value={market} onChange={(e) => setMarket(e.target.value)}>
-              {MARKETS.filter((m) => !Object.keys(symbols).length || symbols[m]).map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </label>
+          <MarketPicker markets={markets} value={market} onChange={chooseMarket} />
           <ConnectButton />
         </div>
       </div>
@@ -146,21 +177,37 @@ export default function Dashboard() {
 
           <div className="dashboard-grid">
             <div className="feature-card glass">
-              <div className="stat-label">USDT0 balance</div>
-              <div className="stat-value text-gradient">{usdt0 === null ? '…' : usd(usdt0)}</div>
-              <div className="stat-sub">On Nado</div>
+              <div className="stat-label">Account value</div>
+              <div className="stat-value text-gradient">{account ? usd(account.equity) : usdt0 === null ? '…' : usd(usdt0)}</div>
+              <div className="stat-sub">
+                {account
+                  ? `Margin available ${usd(Math.max(account.availableMargin, 0))} · USDT0 ${usd(usdt0 ?? 0)}`
+                  : 'On Nado'}
+              </div>
             </div>
             <div className="feature-card glass">
               <div className="stat-label">{market} position</div>
               <div className="stat-value" style={{ color: position ? (position.amount > 0n ? 'var(--success)' : 'var(--danger)') : undefined }}>
                 {position ? `${position.amount > 0n ? 'LONG' : 'SHORT'} ${Math.abs(fromX18(position.amount))}` : 'None'}
               </div>
-              <div className="stat-sub">{position ? `Avg entry ${usd(fromX18(position.avgEntryPriceX18))}` : 'No open position'}</div>
+              <div className="stat-sub">
+                {position && product
+                  ? `Avg entry ${formatPrice(fromX18(position.avgEntryPriceX18), product.price_increment_x18)}${
+                      account && liquidationPrice(account, product.product_id) !== null
+                        ? ` · Liq. ~${formatPrice(liquidationPrice(account, product.product_id)!, product.price_increment_x18)}`
+                        : ''
+                    }`
+                  : 'No open position'}
+              </div>
             </div>
             <div className="feature-card glass">
               <div className="stat-label">{market} price</div>
-              <div className="stat-value">{quote ? usd((quote.bid + quote.ask) / 2) : '…'}</div>
-              <div className="stat-sub">{quote ? `Bid ${usd(quote.bid)} · Ask ${usd(quote.ask)}` : 'Loading'}</div>
+              <div className="stat-value">{quote && product ? formatPrice((quote.bid + quote.ask) / 2, product.price_increment_x18) : '…'}</div>
+              <div className="stat-sub">
+                {quote && product
+                  ? `Bid ${formatPrice(quote.bid, product.price_increment_x18)} · Ask ${formatPrice(quote.ask, product.price_increment_x18)}`
+                  : 'Loading'}
+              </div>
             </div>
           </div>
 
@@ -169,6 +216,8 @@ export default function Dashboard() {
           {product && onSupportedChain && (
             <MainnetGate network={network}>
               <TradePlanForm
+                key={`plan-${product.product_id}`}
+                account={account}
                 network={network}
                 sign={sign}
                 sender={sender}
@@ -181,6 +230,8 @@ export default function Dashboard() {
                 }}
               />
               <LadderForm
+                key={`ladder-${product.product_id}`}
+                account={account}
                 network={network}
                 sign={sign}
                 sender={sender}
@@ -192,9 +243,11 @@ export default function Dashboard() {
                   refresh();
                 }}
               />
-              <TwapForm network={network} sign={sign} sender={sender} product={product} bid={quote?.bid ?? null} ask={quote?.ask ?? null} />
+              <TwapForm key={`twap-${product.product_id}`} account={account} network={network} sign={sign} sender={sender} product={product} bid={quote?.bid ?? null} ask={quote?.ask ?? null} />
               {position && (
                 <ProtectPosition
+                  key={`protect-${product.product_id}`}
+                  account={account}
                   network={network}
                   sign={sign}
                   sender={sender}

@@ -13,6 +13,7 @@ const SECTIONS = [
   { id: 'getting-started', label: 'Getting started' },
   { id: 'offline', label: 'How orders run offline' },
   { id: 'signatures', label: 'What you sign' },
+  { id: 'risk-checks', label: 'Risk checks & sizing' },
   { id: 'trade-plans', label: 'Trade plans' },
   { id: 'ladders', label: 'Ladders & scaled take-profits' },
   { id: 'twap-dca', label: 'TWAP & DCA' },
@@ -100,7 +101,8 @@ export default function HowItWorks() {
                 . Deposits and withdrawals always happen on Nado itself, never in Nadobot.
               </li>
               <li>
-                <strong>Choose a market</strong> (for example BTC-PERP) and pick a tool. On mainnet you&apos;ll confirm once that orders use
+                <strong>Choose a market</strong>: every perpetual market Nado currently trades is available (search by name), then pick
+                a tool. On mainnet you&apos;ll confirm once that orders use
                 real funds.
               </li>
               <li>
@@ -166,6 +168,35 @@ export default function HowItWorks() {
             </p>
           </section>
 
+          <section id="risk-checks">
+            <h2>Risk checks &amp; sizing</h2>
+            <p className="doc-lead">Before you sign, every order shows what it would do to your account if it fully fills.</p>
+            <ul>
+              <li>
+                <strong>Estimated liquidation price</strong>, next to the current one if you already hold a position.
+              </li>
+              <li>
+                <strong>Account leverage</strong> before and after, and how much of your margin the trade would use.
+              </li>
+              <li>
+                <strong>Blocked before signing</strong>: orders that need more margin than your account has, and stop-losses placed beyond the
+                liquidation price, where you could be liquidated before the stop fires.
+              </li>
+              <li>
+                <strong>Warnings</strong> when liquidation would be within 10% of the current price, or leverage would reach 10x or more.
+              </li>
+            </ul>
+            <p>
+              <strong>Size by risk.</strong> In trade plans and ladders you can choose how to size an order: an amount in USD, an amount in
+              the coin, or <em>Risk</em>, the most you&apos;re willing to lose. With Risk, Nadobot works out the size so that hitting the
+              stop-loss loses about that amount, before fees.
+            </p>
+            <div className="callout">
+              These are estimates using Nado&apos;s own margin rules. They assume only this market&apos;s price moves, judge margin at your
+              order&apos;s fill price, and leave out fees and funding. Nado&apos;s live numbers always take priority.
+            </div>
+          </section>
+
           <section id="trade-plans">
             <h2>Trade plans</h2>
             <p className="doc-lead">One entry price with a stop-loss and take-profit attached. Three signatures.</p>
@@ -177,6 +208,9 @@ export default function HowItWorks() {
               <li>
                 <strong>Stop-loss and take-profit</strong>: set as a percentage from the entry. They stay dormant until the entry fills,
                 then activate automatically (even on a partial fill).
+              </li>
+              <li>
+                <strong>Size</strong>: in USD, in the coin, or by risk (the most you&apos;d lose at the stop-loss).
               </li>
               <li>
                 <strong>Expiry</strong>: the entry expires after the number of days you choose (7 by default). Cancelling the entry also
@@ -193,7 +227,7 @@ export default function HowItWorks() {
             <ul>
               <li>
                 <strong>Entries</strong>: 1 to 10 limit orders evenly spaced between a first and last price. <em>Even</em> puts the same
-                size on each; <em>Weighted</em> puts more size on the better prices.
+                size on each; <em>Weighted</em> puts more size on the better prices. Size the whole ladder in USD, in the coin, or by risk.
               </li>
               <li>
                 <strong>One stop-loss</strong> for the whole ladder, set as a percentage from the average entry. It must sit beyond your
@@ -335,6 +369,10 @@ export default function HowItWorks() {
                     <td>Your choice, 7 days by default. Exits stay valid for 30 days after that.</td>
                   </tr>
                   <tr>
+                    <td>Margin</td>
+                    <td>Orders that would need more margin than your account has, or a stop-loss beyond the liquidation price, can&apos;t be signed.</td>
+                  </tr>
+                  <tr>
                     <td>Ladders</td>
                     <td>Up to 10 entries and 4 take-profit steps.</td>
                   </tr>
@@ -374,8 +412,9 @@ export default function HowItWorks() {
                 all, if the price moves more than 0.5% past the trigger. Check <em>Portfolio</em> and <em>My orders</em> after big moves.
               </li>
               <li>
-                <strong>Leverage and liquidation.</strong> Nado&apos;s margin rules always apply. A stop-loss doesn&apos;t prevent
-                liquidation if your account runs out of margin first.
+                <strong>Leverage and liquidation.</strong> Nado&apos;s margin rules always apply. The liquidation price shown is an
+                estimate: other positions, funding and fees move it, and a stop-loss doesn&apos;t prevent liquidation if your account runs
+                out of margin first.
               </li>
               <li>
                 <strong>Partial fills.</strong> A ladder may only partly fill, and a TWAP or DCA execution that can&apos;t fill within your

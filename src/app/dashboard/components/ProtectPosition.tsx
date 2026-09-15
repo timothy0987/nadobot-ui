@@ -2,10 +2,13 @@
 
 import { useState } from 'react';
 import {
+  formatPrice,
   fromX18,
+  liquidationPrice,
   placeTriggerOrder,
   roundToIncrement,
   toX18,
+  type AccountRisk,
   type NadoNetwork,
   type PerpPosition,
   type ProductSymbol,
@@ -13,6 +16,7 @@ import {
 } from '@/lib/nado';
 
 interface Props {
+  account: AccountRisk | null;
   network: NadoNetwork;
   sign: SignTypedDataAsync;
   sender: `0x${string}`;
@@ -21,10 +25,9 @@ interface Props {
   onPlaced: () => void;
 }
 
-const usd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
 /** Attach a stop-loss and take-profit to a position the trader already holds (opened manually or by a plan). */
-export function ProtectPosition({ network, sign, sender, product, position, onPlaced }: Props) {
+export function ProtectPosition({ account, network, sign, sender, product, position, onPlaced }: Props) {
   const [stopLossPct, setStopLossPct] = useState('5');
   const [takeProfitPct, setTakeProfitPct] = useState('10');
   const [busy, setBusy] = useState(false);
@@ -36,6 +39,9 @@ export function ProtectPosition({ network, sign, sender, product, position, onPl
   const tick = (price: number, mode: 'down' | 'up' | 'nearest') => roundToIncrement(toX18(price), increment, mode);
   const stop = entry * (isLong ? 1 - Number(stopLossPct) / 100 : 1 + Number(stopLossPct) / 100);
   const takeProfit = entry * (isLong ? 1 + Number(takeProfitPct) / 100 : 1 - Number(takeProfitPct) / 100);
+  const price = (n: number) => formatPrice(n, product.price_increment_x18);
+  const liq = account ? liquidationPrice(account, product.product_id) : null;
+  const stopPastLiquidation = liq !== null && (isLong ? stop <= liq : stop >= liq);
 
   async function protect() {
     setBusy(true);
@@ -72,7 +78,7 @@ export function ProtectPosition({ network, sign, sender, product, position, onPl
         <div>
           <h3>Protect open position</h3>
           <p className="muted" style={{ marginTop: '0.4rem', maxWidth: 640 }}>
-            You hold {isLong ? 'a LONG' : 'a SHORT'} of {Math.abs(fromX18(position.amount))} {product.symbol} at an average {usd(entry)}.
+            You hold {isLong ? 'a LONG' : 'a SHORT'} of {Math.abs(fromX18(position.amount))} {product.symbol} at an average {price(entry)}.
             Attach a stop-loss and take-profit that run on Nado while you&apos;re offline. Check &ldquo;My orders&rdquo; first if you may
             already have protection in place.
           </p>
@@ -88,14 +94,25 @@ export function ProtectPosition({ network, sign, sender, product, position, onPl
           <input type="number" min="0.1" step="0.1" value={takeProfitPct} onChange={(e) => setTakeProfitPct(e.target.value)} />
         </label>
         <div className="muted" style={{ paddingBottom: '0.6rem' }}>
-          Stop {usd(fromX18(tick(stop, 'nearest')))} · Take-profit {usd(fromX18(tick(takeProfit, 'nearest')))}
+          Stop {price(fromX18(tick(stop, 'nearest')))} · Take-profit {price(fromX18(tick(takeProfit, 'nearest')))}
         </div>
       </div>
       <div className="form-row">
-        <button className="btn btn-primary" onClick={protect} disabled={busy}>
+        <button className="btn btn-primary" onClick={protect} disabled={busy || stopPastLiquidation}>
           {busy ? 'Confirm the 2 signatures in your wallet…' : 'Set protection'}
         </button>
       </div>
+      {liq !== null && (
+        <p className="muted" style={{ marginTop: '0.5rem' }}>
+          Estimated liquidation price: {price(liq)}
+        </p>
+      )}
+      {stopPastLiquidation && (
+        <div className="notice error">
+          This stop-loss ({price(stop)}) is {isLong ? 'at or below' : 'at or above'} your estimated liquidation price ({price(liq!)}), so the
+          position could be liquidated before it fires. Use a tighter stop-loss.
+        </div>
+      )}
       {message && <div className={`notice ${message.ok ? 'success' : 'error'}`}>{message.text}</div>}
     </div>
   );

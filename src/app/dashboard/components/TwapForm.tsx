@@ -2,20 +2,25 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  assessTradeRisk,
   cancelOrders,
   fetchTwapExecutions,
   fromX18,
   planTwap,
   placeTwapOrder,
+  priceInputValue,
   TWAP_MAX_DURATION_SECONDS,
+  type AccountRisk,
   type NadoNetwork,
   type ProductSymbol,
   type SignTypedDataAsync,
   type TwapExecution,
   type TwapInput,
 } from '@/lib/nado';
+import { RiskPreview } from './RiskPreview';
 
 interface Props {
+  account: AccountRisk | null;
   network: NadoNetwork;
   sign: SignTypedDataAsync;
   sender: `0x${string}`;
@@ -71,7 +76,7 @@ function save(list: SavedTwap[]) {
  * TWAP: split a large order into timed slices to reduce price impact. DCA: the same Nado primitive used to buy (or
  * sell) steadily over hours. One signature; Nado executes every slice on its own servers.
  */
-export function TwapForm({ network, sign, sender, product, bid, ask }: Props) {
+export function TwapForm({ account, network, sign, sender, product, bid, ask }: Props) {
   const [mode, setMode] = useState<Mode>('twap');
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [unit, setUnit] = useState<'usd' | 'base'>('usd');
@@ -125,9 +130,19 @@ export function TwapForm({ network, sign, sender, product, bid, ask }: Props) {
 
   const plan = input ? planTwap(input, Math.floor(Date.now() / 1000)) : null;
   const sliceSize = plan ? Math.abs(fromX18(plan.sliceAmounts[0] ?? 0n)) : 0;
+  // Worst case for margin: every execution fills at the limit price.
+  const risk =
+    account && plan && plan.amount !== 0n && !plan.errors.length
+      ? assessTradeRisk(account, {
+          productId: product.product_id,
+          fills: [{ productId: product.product_id, amount: fromX18(plan.amount), price: fromX18(plan.limitPriceX18) }],
+          priceIncrementX18: product.price_increment_x18,
+        })
+      : null;
+  const blocked = !plan || plan.errors.length > 0 || Boolean(risk?.errors.length);
 
   async function submit() {
-    if (!input || !plan || plan.errors.length) return;
+    if (!input || !plan || blocked) return;
     setBusy(true);
     setMessage(null);
     try {
@@ -240,7 +255,7 @@ export function TwapForm({ network, sign, sender, product, bid, ask }: Props) {
             type="number"
             min="0"
             step="any"
-            placeholder={defaultLimit ? defaultLimit.toFixed(0) : ''}
+            placeholder={defaultLimit ? priceInputValue(defaultLimit, product.price_increment_x18) : ''}
             value={limitPrice}
             onChange={(e) => setLimitPrice(e.target.value)}
           />
@@ -269,9 +284,12 @@ export function TwapForm({ network, sign, sender, product, bid, ask }: Props) {
       )}
 
       {plan?.errors.length ? <div className="notice error">{plan.errors[0]}</div> : null}
+      {plan && !plan.errors.length && (
+        <RiskPreview account={account} risk={risk} productId={product.product_id} priceIncrementX18={product.price_increment_x18} />
+      )}
 
       <div className="form-row">
-        <button className="btn btn-primary" onClick={submit} disabled={!plan || plan.errors.length > 0 || busy}>
+        <button className="btn btn-primary" onClick={submit} disabled={blocked || busy}>
           {busy ? 'Confirm the signature in your wallet…' : `Start ${mode === 'dca' ? 'DCA' : 'TWAP'}`}
         </button>
       </div>
