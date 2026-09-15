@@ -18,6 +18,15 @@ All three live on Nado's servers, so the plan runs whether or not the dashboard 
 
 **Why not a shared bot key?** Nado's [linked signers](https://docs.nado.xyz/developer-resources/get-started/linked-signers) have full permissions, including withdrawals. A single bot key linked to many traders' accounts would let one server compromise drain every account. Trade plans avoid that entirely: nobody but the trader ever holds a key that controls their funds.
 
+## Portfolio: positions, PnL and volume
+
+The connected wallet's trading on Nado, across every market and every app it trades from. It's all public gateway and indexer data, so it needs no signature.
+
+- **Open positions** at Nado's oracle (mark) price: entry, value, unrealized PnL and funding. Sizes come from the gateway, so a fresh fill shows up before the indexer catches up.
+- **History** of closed positions: entry → exit, time held, fees plus funding, and net PnL. Older pages load on demand.
+- **24h / 7d / 30d**: realized PnL after fees, volume, fill count and maker share, plus lifetime volume. A chart shows volume per hour (24h) or per day, with cumulative realized PnL over it.
+- With `NEXT_PUBLIC_BUILDER_ID` set, **Via Nadobot** shows how much of the wallet's volume carried the builder code, read from each filled order's appendix.
+
 ## Ladders and scaled take-profits
 
 Instead of one entry price, spread the entry across **up to 10 limit orders** between a first and last price, then close the position in **up to 4 take-profit steps**, with one stop-loss covering the whole ladder.

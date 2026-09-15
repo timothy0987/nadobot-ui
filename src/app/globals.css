@@ -579,3 +579,94 @@ button:disabled {
   outline: none;
   border-color: var(--accent-color);
 }
+
+/* Portfolio */
+.portfolio-stats {
+  grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
+  gap: 1rem;
+}
+
+.portfolio-stats > div > strong {
+  display: block;
+  font-size: 1.35rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.portfolio-stats > div > small {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+}
+
+.portfolio-table th,
+.portfolio-table td {
+  padding-right: 1.25rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.portfolio-table td {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+.activity-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.chart-legend i {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 0.35rem;
+}
+
+.legend-bar {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--accent-color);
+  opacity: 0.55;
+}
+
+.legend-line {
+  width: 16px;
+  height: 2px;
+  background: var(--success);
+}
+
+.chart-bar {
+  fill: var(--accent-color);
+  opacity: 0.55;
+}
+
+.chart-bar:hover {
+  opacity: 0.9;
+}
+
+.chart-line {
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.chart-zero {
+  stroke: var(--glass-border);
+  stroke-dasharray: 4 4;
+}
+
+.chart-axis {
+  fill: var(--text-secondary);
+  font-size: 11px;
+}

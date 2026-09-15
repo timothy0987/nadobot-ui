@@ -214,31 +214,45 @@ export interface Match {
   timestamp: number;
   baseFilled: number;
   quoteFilled: number;
+  /** Fees excluded from realizedPnl; negative fees are maker rebates. */
   fee: number;
   realizedPnl: number;
   builderFee: number;
+  isTaker: boolean;
+  /** Builder code carried by the filled order (0 when none), read from its appendix. */
+  builderId: number;
+}
+
+async function archiveQuery(network: NadoNetwork, body: object) {
+  const res = await fetch(network.archiveUrl, { method: 'POST', headers: gatewayHeaders, body: JSON.stringify(body) });
+  const json = await res.json();
+  if (json.error) throw new Error(json.error);
+  return json;
+}
+
+function parseMatches(json: any): Match[] {
+  const txs = new Map<string, any>((json.txs ?? []).map((t: any) => [String(t.submission_idx), t]));
+  return (json.matches ?? []).map((m: any) => {
+    const tx = txs.get(String(m.submission_idx));
+    return {
+      digest: m.digest,
+      productId: Number(m.pre_balance?.base?.perp?.product_id ?? m.pre_balance?.base?.spot?.product_id ?? tx?.tx?.match_orders?.product_id ?? -1),
+      submissionIdx: String(m.submission_idx),
+      timestamp: Number(tx?.timestamp ?? 0),
+      baseFilled: fromX18(m.base_filled),
+      quoteFilled: fromX18(m.quote_filled),
+      fee: fromX18(m.fee),
+      realizedPnl: fromX18(m.realized_pnl ?? '0'),
+      builderFee: fromX18(m.builder_fee ?? '0'),
+      isTaker: Boolean(m.is_taker),
+      builderId: m.order?.appendix ? Number((BigInt(m.order.appendix) >> 48n) & 0xffffn) : 0,
+    };
+  });
 }
 
 /** Recent fills for a subaccount from Nado's archive indexer. Public data, no signature needed. */
 export async function fetchMatches(network: NadoNetwork, subaccount: string, productIds: number[], limit = 20): Promise<Match[]> {
-  const res = await fetch(network.archiveUrl, {
-    method: 'POST',
-    headers: gatewayHeaders,
-    body: JSON.stringify({ matches: { subaccounts: [subaccount], product_ids: productIds, limit } }),
-  });
-  const json = await res.json();
-  const times = new Map<string, number>((json.txs ?? []).map((t: any) => [String(t.submission_idx), Number(t.timestamp)]));
-  return (json.matches ?? []).map((m: any) => ({
-    digest: m.digest,
-    productId: Number(m.pre_balance?.base?.perp?.product_id ?? m.pre_balance?.base?.spot?.product_id ?? -1),
-    submissionIdx: String(m.submission_idx),
-    timestamp: times.get(String(m.submission_idx)) ?? 0,
-    baseFilled: fromX18(m.base_filled),
-    quoteFilled: fromX18(m.quote_filled),
-    fee: fromX18(m.fee),
-    realizedPnl: fromX18(m.realized_pnl ?? '0'),
-    builderFee: fromX18(m.builder_fee ?? '0'),
-  }));
+  return parseMatches(await archiveQuery(network, { matches: { subaccounts: [subaccount], product_ids: productIds, limit } }));
 }
 
 /* ---------------------------------- executes ---------------------------------- */
@@ -940,4 +954,195 @@ export async function cancelLadder(
   const pending = await listTriggerOrders(network, sign, sender, [productId]);
   const live = exits.filter((o) => pending.some((t) => sameDigest(t.order.digest, o.digest)));
   await cancelOrders(network, sign, 'trigger', sender, live.map((o) => ({ productId, digest: o.digest })));
+}
+
+/* ---------------------------------- portfolio ---------------------------------- */
+
+/** One position window from Nado's indexer: from the fill that opened it to the one that closed (or last changed) it. */
+export interface PositionRecord {
+  productId: number;
+  isolated: boolean;
+  long: boolean;
+  open: boolean;
+  openId: string;
+  /** Current absolute size; 0 once closed. */
+  size: number;
+  maxSize: number;
+  entryPrice: number;
+  exitPrice: number;
+  /** Open plus close fees; negative means net rebates. */
+  fees: number;
+  /** Price PnL on size already closed, fees and funding excluded. */
+  realizedPnl: number;
+  /** Funding received (positive) or paid (negative). */
+  funding: number;
+  liquidatedSize: number;
+  openedAt: number;
+  updatedAt: number;
+}
+
+function parsePosition(p: any): PositionRecord {
+  return {
+    productId: Number(p.product_id),
+    isolated: Boolean(p.isolated),
+    long: Boolean(p.direction),
+    open: String(p.close_id) === '-1',
+    openId: String(p.open_id),
+    size: fromX18(p.amount),
+    maxSize: fromX18(p.max_amount),
+    entryPrice: fromX18(p.average_entry_price),
+    exitPrice: fromX18(p.average_exit_price),
+    fees: fromX18(p.open_fee) + fromX18(p.close_fee),
+    realizedPnl: fromX18(p.realized_pnl),
+    funding: fromX18(p.net_funding_payment),
+    liquidatedSize: fromX18(p.liquidated_amount),
+    openedAt: Number(p.open_timestamp),
+    updatedAt: Number(p.update_timestamp),
+  };
+}
+
+/** Net result of a position so far: realized price PnL minus fees plus funding. */
+export const positionNetPnl = (p: PositionRecord) => p.realizedPnl - p.fees + p.funding;
+
+/** Position history, newest first. Pass `nextIdx` back as `idx` for the next page. Public data, no signature. */
+export async function fetchPositions(network: NadoNetwork, subaccount: string, opts: { open?: boolean; limit?: number; idx?: string } = {}) {
+  const limit = opts.limit ?? 50;
+  const json = await archiveQuery(network, {
+    positions: { subaccount, limit, ...(opts.open === undefined ? {} : { open: opts.open }), ...(opts.idx ? { idx: opts.idx } : {}) },
+  });
+  const positions: PositionRecord[] = (json.positions ?? []).map(parsePosition);
+  const oldest = positions.reduce<bigint | null>((min, p) => (min === null || BigInt(p.openId) < min ? BigInt(p.openId) : min), null);
+  return { positions, nextIdx: positions.length === limit && oldest !== null ? (oldest - 1n).toString() : null };
+}
+
+/** Every fill since `sinceSeconds`, newest first, paging 500 at a time. `truncated` when `maxPages` ran out first. */
+export async function fetchFillsSince(network: NadoNetwork, subaccount: string, sinceSeconds: number, maxPages = 4) {
+  const fills: Match[] = [];
+  let idx: string | undefined;
+  for (let page = 0; page < maxPages; page++) {
+    const batch = parseMatches(await archiveQuery(network, { matches: { subaccounts: [subaccount], limit: 500, ...(idx ? { idx } : {}) } }));
+    for (const f of batch) {
+      if (f.timestamp < sinceSeconds) return { fills, truncated: false };
+      fills.push(f);
+    }
+    if (batch.length < 500) return { fills, truncated: false };
+    idx = (BigInt(batch[batch.length - 1].submissionIdx) - 1n).toString();
+  }
+  return { fills, truncated: true };
+}
+
+/** Lifetime traded volume (USDT0) and fill count per market, from each market's latest fill event. */
+export async function fetchLifetimeVolume(network: NadoNetwork, subaccount: string, productIds: number[]) {
+  const results = await Promise.all(
+    productIds.map(async (productId) => {
+      const json = await archiveQuery(network, { events: { subaccounts: [subaccount], product_ids: [productId], event_types: ['match_orders'], limit: { raw: 1 } } });
+      const e = json.events?.[0];
+      return { productId, volume: e ? fromX18(e.quote_volume_cumulative ?? '0') : 0, trades: e ? Number(e.cumulative_trade_count ?? 0) : 0 };
+    })
+  );
+  return {
+    volume: results.reduce((a, r) => a + r.volume, 0),
+    trades: results.reduce((a, r) => a + r.trades, 0),
+    byProduct: results,
+  };
+}
+
+/** Oracle (mark) price per product id, the price Nado values positions at. */
+export async function fetchOraclePrices(network: NadoNetwork): Promise<Record<number, number>> {
+  const data = await gatewayQuery(network, { type: 'all_products' });
+  const prices: Record<number, number> = {};
+  for (const p of [...(data.spot_products ?? []), ...(data.perp_products ?? [])]) prices[p.product_id] = fromX18(p.oracle_price_x18);
+  return prices;
+}
+
+export interface OpenPositionView {
+  productId: number;
+  long: boolean;
+  size: number;
+  entryPrice: number;
+  markPrice: number;
+  value: number;
+  /** Price PnL at the mark, before fees and funding. */
+  unrealizedPnl: number;
+  unrealizedPercent: number;
+  funding: number;
+  fees: number;
+}
+
+/**
+ * Pure: live positions from the gateway (authoritative size) joined with the indexer's record (entry price, fees,
+ * funding). If the indexer hasn't caught up with a fresh fill yet, the entry falls back to the gateway's cost basis.
+ */
+export function buildOpenPositions(subaccountInfo: any, records: PositionRecord[], marks: Record<number, number>): OpenPositionView[] {
+  const views: OpenPositionView[] = [];
+  for (const b of subaccountInfo?.perp_balances ?? []) {
+    const amount = BigInt(b.balance.amount);
+    if (amount === 0n) continue;
+    const productId = Number(b.product_id);
+    const long = amount > 0n;
+    const size = Math.abs(fromX18(amount));
+    const record = records.find((r) => r.open && !r.isolated && r.productId === productId && r.long === long);
+    const entryPrice = record?.entryPrice || Math.abs(fromX18((-BigInt(b.balance.v_quote_balance) * X18) / amount));
+    const markPrice = marks[productId] ?? entryPrice;
+    const unrealizedPnl = (markPrice - entryPrice) * size * (long ? 1 : -1);
+    views.push({
+      productId,
+      long,
+      size,
+      entryPrice,
+      markPrice,
+      value: size * markPrice,
+      unrealizedPnl,
+      unrealizedPercent: entryPrice ? (unrealizedPnl / (entryPrice * size)) * 100 : 0,
+      funding: record?.funding ?? 0,
+      fees: record?.fees ?? 0,
+    });
+  }
+  return views.sort((a, b) => b.value - a.value);
+}
+
+export interface PnlBucket {
+  /** Unix seconds at the start of the bucket (UTC-aligned). */
+  start: number;
+  volume: number;
+  /** Realized price PnL minus fees for fills in the bucket. */
+  pnl: number;
+}
+
+export interface TradingSummary {
+  volume: number;
+  fills: number;
+  makerVolume: number;
+  fees: number;
+  realizedPnl: number;
+  /** Realized PnL minus fees. Funding is not part of fills; it is reported per position. */
+  netPnl: number;
+  builderVolume: number;
+  buckets: PnlBucket[];
+}
+
+/** Pure: totals plus one bucket per `bucketSeconds` (empty ones included) for fills in [sinceSeconds, nowSeconds]. */
+export function summarizeFills(fills: Match[], sinceSeconds: number, nowSeconds: number, builderId = 0, bucketSeconds = 86400): TradingSummary {
+  const align = (t: number) => Math.floor(t / bucketSeconds) * bucketSeconds;
+  const buckets = new Map<number, PnlBucket>();
+  for (let t = align(sinceSeconds); t <= nowSeconds; t += bucketSeconds) buckets.set(t, { start: t, volume: 0, pnl: 0 });
+  const summary: TradingSummary = { volume: 0, fills: 0, makerVolume: 0, fees: 0, realizedPnl: 0, netPnl: 0, builderVolume: 0, buckets: [] };
+  for (const f of fills) {
+    if (f.timestamp < sinceSeconds || f.timestamp > nowSeconds) continue;
+    const notional = Math.abs(f.quoteFilled);
+    summary.volume += notional;
+    summary.fills += 1;
+    if (!f.isTaker) summary.makerVolume += notional;
+    summary.fees += f.fee;
+    summary.realizedPnl += f.realizedPnl;
+    if (builderId && f.builderId === builderId) summary.builderVolume += notional;
+    const bucket = buckets.get(align(f.timestamp));
+    if (bucket) {
+      bucket.volume += notional;
+      bucket.pnl += f.realizedPnl - f.fee;
+    }
+  }
+  summary.netPnl = summary.realizedPnl - summary.fees;
+  summary.buckets = [...buckets.values()].sort((a, b) => a.start - b.start);
+  return summary;
 }

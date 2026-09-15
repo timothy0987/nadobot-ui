@@ -24,6 +24,7 @@ import { Toasts, useBotStatus, useNotifications, usePush, useWalletFills } from 
 import { PushSettings } from './components/PushSettings';
 import { TwapForm } from './components/TwapForm';
 import { LadderForm } from './components/LadderForm';
+import { PortfolioPanel } from './components/PortfolioPanel';
 import { MainnetGate, NetworkSwitch, useDashboardNetwork } from './components/NetworkSwitch';
 
 const MARKETS = ['BTC-PERP', 'ETH-PERP'];
@@ -162,6 +163,8 @@ export default function Dashboard() {
               <div className="stat-sub">{quote ? `Bid ${usd(quote.bid)} · Ask ${usd(quote.ask)}` : 'Loading'}</div>
             </div>
           </div>
+
+          {onSupportedChain && exists !== false && <PortfolioPanel network={network} sender={sender} symbols={symbols} />}
 
           {product && onSupportedChain && (
             <MainnetGate network={network}>
