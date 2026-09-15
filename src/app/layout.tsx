@@ -20,7 +20,7 @@ export default function RootLayout({
           <nav className="container navbar">
             <a href="/" className="logo">
               Nadobot
-              <span className="pill">Unofficial</span>
+              <span className="pill">Built on Nado</span>
             </a>
             <div className="nav-links">
               <a href="/how-it-works" className="nav-link">
