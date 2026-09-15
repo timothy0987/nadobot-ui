@@ -670,3 +670,327 @@ button:disabled {
   fill: var(--text-secondary);
   font-size: 11px;
 }
+
+/* Header: keep the container's side gutter (the old shorthand padding zeroed it, pushing the logo to the edge) */
+.navbar {
+  padding-inline: 2rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.nav-link {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.nav-link:hover {
+  color: var(--text-primary);
+}
+
+.btn-group {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 600px) {
+  .container,
+  .navbar {
+    padding-inline: 1rem;
+  }
+}
+
+/* How it works guide */
+.doc-page {
+  padding-bottom: 4rem;
+}
+
+.doc-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 3rem 0 2.5rem;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.doc-hero h1 {
+  font-size: clamp(2rem, 5vw, 3rem);
+  line-height: 1.1;
+}
+
+.doc-hero .subtitle {
+  margin-bottom: 0.5rem;
+  max-width: 680px;
+}
+
+.doc-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 3rem;
+  margin-top: 2.5rem;
+}
+
+.doc-toc {
+  position: sticky;
+  top: 1.5rem;
+  align-self: start;
+  font-size: 0.9rem;
+}
+
+.doc-toc-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+}
+
+.doc-toc ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border-left: 1px solid var(--glass-border);
+}
+
+.doc-toc a {
+  display: block;
+  padding: 0.3rem 0 0.3rem 0.9rem;
+  margin-left: -1px;
+  border-left: 1px solid transparent;
+  color: var(--text-secondary);
+}
+
+.doc-toc a:hover {
+  color: var(--text-primary);
+  border-left-color: var(--accent-color);
+}
+
+.doc {
+  max-width: 760px;
+  line-height: 1.7;
+  color: #d1d5db;
+}
+
+.doc section {
+  scroll-margin-top: 1.5rem;
+  padding-bottom: 2.25rem;
+}
+
+.doc section + section {
+  padding-top: 2.25rem;
+  border-top: 1px solid var(--glass-border);
+}
+
+.doc h2 {
+  font-size: 1.5rem;
+  color: var(--text-primary);
+  margin-bottom: 0.75rem;
+}
+
+.doc p + p,
+.doc p + ul,
+.doc ul + p,
+.doc .callout + p,
+.doc p + .callout,
+.doc ul + .callout,
+.doc .flow + p,
+.doc p + .table-scroll {
+  margin-top: 0.9rem;
+}
+
+.doc a {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.doc strong {
+  color: var(--text-primary);
+}
+
+.doc ul {
+  padding-left: 1.25rem;
+}
+
+.doc li + li {
+  margin-top: 0.5rem;
+}
+
+.doc code {
+  font-size: 0.85em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+}
+
+.doc-lead {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.9rem;
+}
+
+.doc-steps {
+  list-style: none;
+  counter-reset: step;
+  padding: 0;
+}
+
+.doc-steps li {
+  counter-increment: step;
+  position: relative;
+  padding-left: 2.75rem;
+  min-height: 2rem;
+}
+
+.doc-steps li + li {
+  margin-top: 1rem;
+}
+
+.doc-steps li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  background: var(--glass-border);
+}
+
+.flow {
+  display: flex;
+  align-items: stretch;
+  gap: 0.75rem;
+  margin: 1rem 0 0.5rem;
+}
+
+.flow-step {
+  flex: 1;
+  padding: 1.1rem;
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+}
+
+.flow-step strong {
+  display: block;
+  margin: 0.4rem 0 0.25rem;
+}
+
+.flow-step p {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.flow-num {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent-color);
+}
+
+.flow-arrow {
+  align-self: center;
+  color: var(--text-secondary);
+  font-size: 1.25rem;
+}
+
+.callout {
+  padding: 0.9rem 1.1rem;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  border-left: 3px solid var(--accent-color);
+  background: var(--bg-secondary);
+  font-size: 0.95rem;
+}
+
+.callout.warn {
+  border-left-color: #f59e0b;
+}
+
+.doc-table td:first-child {
+  color: var(--text-primary);
+  padding-right: 1.5rem;
+  white-space: nowrap;
+  vertical-align: top;
+}
+
+.doc-table td {
+  padding: 0.75rem 0;
+}
+
+.doc details {
+  border-bottom: 1px solid var(--glass-border);
+  padding: 0.9rem 0;
+}
+
+.doc details:first-of-type {
+  border-top: 1px solid var(--glass-border);
+}
+
+.doc summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.doc details p {
+  margin-top: 0.6rem;
+  color: var(--text-secondary);
+}
+
+.doc-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding: 1.5rem 1.75rem;
+  margin-top: 1rem;
+}
+
+@media (max-width: 860px) {
+  .doc-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+
+  .doc-toc {
+    position: static;
+  }
+
+  .doc-toc ol {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    border-left: none;
+  }
+
+  .doc-toc a {
+    padding: 0.3rem 0.7rem;
+    margin-left: 0;
+    border: 1px solid var(--glass-border);
+    border-radius: 999px;
+    font-size: 0.82rem;
+  }
+
+  .flow {
+    flex-direction: column;
+  }
+
+  .flow-arrow {
+    transform: rotate(90deg);
+  }
+}

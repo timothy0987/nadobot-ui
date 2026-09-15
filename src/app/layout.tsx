@@ -22,7 +22,10 @@ export default function RootLayout({
               Nadobot
               <span className="pill">Unofficial</span>
             </a>
-            <div>
+            <div className="nav-links">
+              <a href="/how-it-works" className="nav-link">
+                How it works
+              </a>
               <a href="/dashboard" className="btn btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.9rem' }}>
                 Launch App
               </a>

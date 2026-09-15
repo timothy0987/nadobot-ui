@@ -17,9 +17,9 @@ export default function Home() {
           <Link href="/dashboard" className="btn btn-primary">
             Launch App
           </Link>
-          <a href="https://github.com/timothy0987/nadobot-ui" target="_blank" rel="noreferrer" className="btn btn-secondary">
-            View Source
-          </a>
+          <Link href="/how-it-works" className="btn btn-secondary">
+            How it works
+          </Link>
         </div>
 
         <div className="features-grid">
