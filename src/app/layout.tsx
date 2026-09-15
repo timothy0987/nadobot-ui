@@ -5,7 +5,7 @@ import { Providers } from './Providers'
 export const metadata: Metadata = {
   title: 'Nadobot · Independent trade automation for Nado (unofficial)',
   description:
-    'Nadobot is an independent, open-source tool for trading on Nado. Not affiliated with or endorsed by Nado. It never asks for token approvals or transfers.',
+    'Nadobot is an independent tool for trading on Nado. Not affiliated with or endorsed by Nado. It never asks for token approvals or transfers.',
 }
 
 export default function RootLayout({
@@ -34,7 +34,7 @@ export default function RootLayout({
           {children}
           <footer className="container site-footer">
             <p>
-              <strong>Nadobot is an independent, open-source tool.</strong> It is built on Nado&apos;s public API and is not affiliated
+              <strong>Nadobot is an independent tool.</strong> It is built on Nado&apos;s public API and is not affiliated
               with, endorsed by, or operated by Nado. The official Nado app is at{' '}
               <a href="https://app.nado.xyz" target="_blank" rel="noreferrer">
                 app.nado.xyz
@@ -43,11 +43,8 @@ export default function RootLayout({
             </p>
             <p>
               Nadobot never asks for token approvals, transfers, or on-chain transactions. The only wallet requests are signed
-              messages for Nado (<code>Order</code>, <code>Cancellation</code>, <code>ListTriggerOrders</code>). Reject anything else.
-              Source:{' '}
-              <a href="https://github.com/timothy0987/nadobot-ui" target="_blank" rel="noreferrer">
-                github.com/timothy0987/nadobot-ui
-              </a>
+              messages for Nado (<code>Order</code>, <code>Cancellation</code>, <code>ListTriggerOrders</code>). Reject anything else.{' '}
+              <a href="/how-it-works">How Nadobot works</a>
             </p>
           </footer>
         </Providers>
