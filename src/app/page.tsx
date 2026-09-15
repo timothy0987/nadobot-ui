@@ -4,7 +4,6 @@ export default function Home() {
   return (
     <main className="container">
       <section className="hero">
-        <span className="pill" style={{ marginBottom: '1.25rem' }}>Independent tool · not affiliated with Nado</span>
         <h1>
           Keep trading on Nado <br />
           <span className="text-gradient">while you&apos;re offline</span>
