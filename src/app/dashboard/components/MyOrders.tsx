@@ -6,6 +6,7 @@ import {
   fetchOpenOrders,
   fromX18,
   isReduceOnly,
+  describeTwap,
   listTriggerOrders,
   type NadoNetwork,
   type ProductSymbol,
@@ -35,7 +36,22 @@ interface Row {
 
 const usd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
+// Plain statuses are strings; a running TWAP reports {twap_executing: {current_execution, total_executions}}.
+function triggerStatus(status: unknown) {
+  if (status === 'waiting_dependency') return 'Waiting for entry to fill';
+  if (status === 'waiting_price') return 'Watching price';
+  const running = (status as any)?.twap_executing;
+  if (running) return `Executing ${running.current_execution} of ${running.total_executions}`;
+  return typeof status === 'string' ? status.replace(/_/g, ' ') : 'Active';
+}
+
 function describeTrigger(t: TriggerOrderEntry): Pick<Row, 'kind' | 'price' | 'linkedTo'> {
+  if (t.order.trigger?.time_trigger) {
+    const { executions, intervalSeconds } = describeTwap(t);
+    const every = intervalSeconds < 3600 ? `${Math.round(intervalSeconds / 60)} min` : `${(intervalSeconds / 3600).toFixed(1)} h`;
+    const limit = fromX18(t.order.order.priceX18);
+    return { kind: `TWAP · ${executions}× every ${every}`, price: `${BigInt(t.order.order.amount) > 0n ? '≤' : '≥'} ${usd(limit)}` };
+  }
   const req = t.order.trigger?.price_trigger?.price_requirement ?? {};
   const [condition, value] = (Object.entries(req)[0] ?? ['', '0']) as [string, string];
   const above = condition.endsWith('_above');
@@ -87,7 +103,7 @@ export function MyOrders({ network, sign, sender, product, refreshKey }: Props) 
           ...describeTrigger(t),
           side: amount > 0n ? 'Buy' : 'Sell',
           size: Math.abs(fromX18(amount)),
-          status: t.status === 'waiting_dependency' ? 'Waiting for entry to fill' : 'Watching price',
+          status: triggerStatus(t.status),
           service: 'trigger',
           digest: t.order.digest,
         };

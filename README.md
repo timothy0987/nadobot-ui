@@ -18,6 +18,21 @@ All three live on Nado's servers, so the plan runs whether or not the dashboard 
 
 **Why not a shared bot key?** Nado's [linked signers](https://docs.nado.xyz/developer-resources/get-started/linked-signers) have full permissions, including withdrawals. A single bot key linked to many traders' accounts would let one server compromise drain every account. Trade plans avoid that entirely: nobody but the trader ever holds a key that controls their funds.
 
+## TWAP and DCA
+
+Split a large order into slices that Nado executes over time, from **one signature** (a [TWAP order](https://docs.nado.xyz/developer-resources/api/trigger) on the trigger service, so it also runs while the dashboard is closed):
+
+- **TWAP** - N executions spread over a number of minutes, to reduce price impact.
+- **DCA** - a fixed amount every 15 min to 4 h, for up to 24 hours per schedule.
+
+Every slice is an IOC order bounded by a max slippage and a hard limit price ("never buy above / never sell below"), and carries the builder code. Progress, the next execution and failed slices show under the form, and a schedule can be cancelled at any time.
+
+Nado's limits, checked before you sign: 1-500 executions, the whole schedule must finish within **25 hours**, and each slice must be worth at least the market's minimum order (**$100** on BTC-PERP).
+
+## Networks
+
+The dashboard switches between **Ink Sepolia (testnet)** and **Ink mainnet** from the header; the wallet is asked to change chains and the choice is remembered. Before the first mainnet order, traders must acknowledge that orders use real funds. Fill notifications follow the network the trader subscribed from.
+
 ## The bot
 
 - **Entry:** buys `TRADE_AMOUNT` when price drops `TRADE_DROP_PERCENTAGE` below its session high, never past `MAX_POSITION_SIZE`.

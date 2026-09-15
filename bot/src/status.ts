@@ -97,9 +97,6 @@ export function startStatusServer(botAddress: string, subaccount: string) {
           unsubscribe(body.endpoint);
           return send(res, 200, { ok: true });
         }
-        if (body?.chainId !== undefined && Number(body.chainId) !== ENV.CHAIN_ID) {
-          return send(res, 400, { error: `This bot watches ${ENV.NADO_ENV} (chain ${ENV.CHAIN_ID}); switch networks to get fill notifications here.` });
-        }
         const input = parseSubscribe(body);
         if ('error' in input) return send(res, 400, input);
         await subscribe(input);

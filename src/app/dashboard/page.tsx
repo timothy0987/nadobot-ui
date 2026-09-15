@@ -1,12 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useAccount, useChainId, useSignTypedData } from 'wagmi';
+import { useAccount, useSignTypedData } from 'wagmi';
 import { ConnectButton } from '@rainbow-me/rainbowkit';
 import {
-  NETWORKS,
   BUILDER_ID,
-  networkForChain,
+  INK_MAINNET,
   subaccountToBytes32,
   fetchSubaccountInfo,
   fetchSymbols,
@@ -23,16 +22,17 @@ import { ProtectPosition } from './components/ProtectPosition';
 import { BotStatus } from './components/BotStatus';
 import { Toasts, useBotStatus, useNotifications, usePush, useWalletFills } from './notifications';
 import { PushSettings } from './components/PushSettings';
+import { TwapForm } from './components/TwapForm';
+import { MainnetGate, NetworkSwitch, useDashboardNetwork } from './components/NetworkSwitch';
 
 const MARKETS = ['BTC-PERP', 'ETH-PERP'];
 const usd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
 export default function Dashboard() {
   const { address, isConnected } = useAccount();
-  const chainId = useChainId();
   const { signTypedDataAsync } = useSignTypedData();
-  const network = networkForChain(chainId);
-  const onSupportedChain = Boolean(NETWORKS[chainId]);
+  const { network, onSupportedChain, select, switching, switchError } = useDashboardNetwork();
+  const isMainnet = network.chainId === INK_MAINNET.chainId;
   const sign = signTypedDataAsync as unknown as SignTypedDataAsync;
 
   const [symbols, setSymbols] = useState<Record<string, ProductSymbol>>({});
@@ -53,9 +53,15 @@ export default function Dashboard() {
   const push = usePush(sender, network.chainId);
   const { toasts, dismiss } = useNotifications(bot.status, walletFills, symbolById, push.enabled);
 
+  // Never show one network's balances under the other while the new data loads.
   useEffect(() => {
+    setSymbols({});
+    setQuote(null);
+    setExists(null);
+    setUsdt0(null);
+    setPosition(null);
     fetchSymbols(network).then(setSymbols).catch((e) => console.error('Failed to fetch symbols', e));
-  }, [network]);
+  }, [network, sender]);
 
   const refresh = useCallback(async () => {
     if (!product) return;
@@ -89,6 +95,7 @@ export default function Dashboard() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <NetworkSwitch network={network} select={select} switching={switching} />
           <label className="field" style={{ flexDirection: 'row', alignItems: 'center' }}>
             <span>Market</span>
             <select value={market} onChange={(e) => setMarket(e.target.value)}>
@@ -102,6 +109,8 @@ export default function Dashboard() {
           <ConnectButton />
         </div>
       </div>
+
+      {switchError && <div className="notice error">{switchError}</div>}
 
       {!isConnected || !sender ? (
         <div className="glass panel" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
@@ -117,11 +126,19 @@ export default function Dashboard() {
       ) : (
         <>
           {!onSupportedChain && (
-            <div className="notice error">Switch your wallet to Ink Sepolia or Ink mainnet: orders must be signed on the network they trade on.</div>
-          )}
-          {exists === false && (
             <div className="notice error">
-              This wallet has no Nado account on {network.label} yet. Deposit at least $5 USDT0 on Nado first, then come back.
+              Your wallet is on a network Nado doesn't use. Pick Testnet or Mainnet above: orders must be signed on the network they trade on.
+            </div>
+          )}
+          {onSupportedChain && exists === false && (
+            <div className="notice error">
+              This wallet has no Nado account on {network.label} yet. Deposit at least $5 USDT0{' '}
+              {isMainnet ? (
+                <a href="https://app.nado.xyz" target="_blank" rel="noreferrer" style={{ textDecoration: 'underline' }}>on app.nado.xyz</a>
+              ) : (
+                <a href="https://testnet.nado.xyz/portfolio/faucet" target="_blank" rel="noreferrer" style={{ textDecoration: 'underline' }}>from Nado's testnet faucet</a>
+              )}
+              , then come back.
             </div>
           )}
 
@@ -145,8 +162,8 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {product && (
-            <>
+          {product && onSupportedChain && (
+            <MainnetGate network={network}>
               <TradePlanForm
                 network={network}
                 sign={sign}
@@ -159,6 +176,7 @@ export default function Dashboard() {
                   refresh();
                 }}
               />
+              <TwapForm network={network} sign={sign} sender={sender} product={product} bid={quote?.bid ?? null} ask={quote?.ask ?? null} />
               {position && (
                 <ProtectPosition
                   network={network}
@@ -170,7 +188,7 @@ export default function Dashboard() {
                 />
               )}
               <MyOrders network={network} sign={sign} sender={sender} product={product} refreshKey={ordersRefreshKey} />
-            </>
+            </MainnetGate>
           )}
         </>
       )}

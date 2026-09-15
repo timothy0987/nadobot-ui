@@ -8,12 +8,15 @@ const PUSH_HOST_SUFFIXES = ['.notify.windows.com', '.push.apple.com'];
 const BASE64URL = /^[A-Za-z0-9_-]+={0,2}$/;
 const SUBACCOUNT = /^0x[0-9a-f]{64}$/;
 const TOPICS: PushTopic[] = ['bot', 'fills'];
+// Ink mainnet and Ink Sepolia: fill notifications follow the network the trader is on, not the bot's own network.
+export const SUPPORTED_CHAIN_IDS = [57073, 763373];
 
 export interface SubscribeInput {
   endpoint: string;
   keys: { p256dh: string; auth: string };
   subaccount: string | null;
   topics: PushTopic[];
+  chainId: number | null;
 }
 
 export function isAllowedPushEndpoint(endpoint: unknown): endpoint is string {
@@ -44,5 +47,8 @@ export function parseSubscribe(body: any): SubscribeInput | { error: string } {
   if (subaccount !== null && !SUBACCOUNT.test(subaccount)) return { error: 'Invalid subaccount' };
   if (topics.includes('fills') && !subaccount) return { error: 'Fill notifications need a connected wallet' };
 
-  return { endpoint: sub.endpoint, keys: { p256dh, auth }, subaccount, topics: topics as PushTopic[] };
+  const chainId = body.chainId == null ? null : Number(body.chainId);
+  if (chainId !== null && !SUPPORTED_CHAIN_IDS.includes(chainId)) return { error: 'Unsupported network' };
+
+  return { endpoint: sub.endpoint, keys: { p256dh, auth }, subaccount, topics: topics as PushTopic[], chainId };
 }

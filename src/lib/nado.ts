@@ -100,17 +100,20 @@ const LIST_TRIGGER_ORDERS_TYPES = {
 
 export const OrderType = { DEFAULT: 0, IOC: 1, FOK: 2, POST_ONLY: 3 } as const;
 const TRIGGER_PRICE = 1;
+const TRIGGER_TWAP = 2;
+const TRIGGER_TWAP_CUSTOM_AMOUNTS = 3;
 const REDUCE_ONLY_BIT = 1n << 11n;
 
-/** Order appendix bit layout per docs.nado.xyz (version, order type, reduce-only, trigger type, builder). */
-export function encodeAppendix(opts: { reduceOnly?: boolean; orderType?: number; triggerType?: number } = {}): bigint {
-  const { reduceOnly = false, orderType = 0, triggerType = 0 } = opts;
+/** Order appendix bit layout per docs.nado.xyz (version, order type, reduce-only, trigger type, builder, value). */
+export function encodeAppendix(opts: { reduceOnly?: boolean; orderType?: number; triggerType?: number; value?: bigint } = {}): bigint {
+  const { reduceOnly = false, orderType = 0, triggerType = 0, value = 0n } = opts;
   let appendix = 1n;
   appendix |= BigInt(orderType) << 9n;
   appendix |= (reduceOnly ? 1n : 0n) << 11n;
   appendix |= BigInt(triggerType) << 12n;
   appendix |= BigInt(BUILDER_FEE_RATE_TENTH_BPS) << 38n;
   appendix |= BigInt(BUILDER_ID) << 48n;
+  appendix |= value << 64n;
   return appendix;
 }
 
@@ -330,7 +333,8 @@ export interface TriggerOrderEntry {
     trigger: any;
     digest: string;
   };
-  status: string;
+  /** A string like 'waiting_price', or an object for a running TWAP: {twap_executing: {current_execution, total_executions}}. */
+  status: unknown;
   placed_at: number;
   updated_at: number;
 }
@@ -352,7 +356,7 @@ export async function listTriggerOrders(network: NadoNetwork, sign: SignTypedDat
       tx: { sender, recvTime: recvTime.toString() },
       signature,
       ...(productIds ? { product_ids: productIds } : {}),
-      status_types: ['waiting_price', 'waiting_dependency'],
+      status_types: ['waiting_price', 'waiting_dependency', 'twap_executing'],
     }),
   });
   const json = await res.json();
@@ -521,4 +525,166 @@ export async function fetchBotStatus(): Promise<BotStatus> {
   const res = await fetch(`${BOT_STATUS_URL.replace(/\/$/, '')}/status`, { cache: 'no-store', signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`Bot status endpoint returned ${res.status}`);
   return res.json();
+}
+
+/* ---------------------------------- TWAP / DCA ---------------------------------- */
+
+// Limits enforced by Nado's trigger service (per the official SDK): 1-500 executions, the whole schedule must fit
+// within 25 hours, and every execution is an IOC order that must meet the market's minimum order size.
+export const TWAP_MAX_EXECUTIONS = 500;
+export const TWAP_MAX_DURATION_SECONDS = 25 * 60 * 60;
+
+/** Value field of a TWAP appendix: executions in the high 32 bits, max slippage x 1e6 in the low 32 bits. */
+export function encodeTwapValue(times: number, slippageFrac: number): bigint {
+  return (BigInt(times) << 32n) | BigInt(Math.round(slippageFrac * 1_000_000));
+}
+
+export interface TwapInput {
+  productId: number;
+  sender: `0x${string}`;
+  side: 'buy' | 'sell';
+  totalSize: number;
+  executions: number;
+  intervalSeconds: number;
+  slippagePercent: number;
+  /** Buys never execute above this price, sells never below. */
+  limitPrice: number;
+  /** Current market price, used to check each execution clears the minimum order value at today's price. */
+  marketPrice?: number;
+  reduceOnly?: boolean;
+  priceIncrementX18: bigint;
+  sizeIncrementX18: bigint;
+  minOrderValueX18: bigint;
+}
+
+export interface TwapPlan {
+  amount: bigint;
+  sliceAmounts: bigint[];
+  limitPriceX18: bigint;
+  durationSeconds: number;
+  expiration: bigint;
+  appendixValue: bigint;
+  errors: string[];
+}
+
+/**
+ * Pure: turns a TWAP request into exact on-chain amounts and checks it against Nado's limits. Every slice is an exact
+ * lot multiple, with any rounding remainder added to the last slice so the total is what the trader asked for.
+ */
+export function planTwap(p: TwapInput, nowSeconds: number): TwapPlan {
+  const errors: string[] = [];
+  const executions = Math.floor(p.executions);
+  if (!(executions >= 1 && executions <= TWAP_MAX_EXECUTIONS)) errors.push(`Executions must be between 1 and ${TWAP_MAX_EXECUTIONS}.`);
+  if (!(p.intervalSeconds >= 1)) errors.push('Interval must be at least 1 second.');
+  if (!(p.slippagePercent > 0 && p.slippagePercent <= 10)) errors.push('Max slippage must be between 0 and 10%.');
+  if (!(p.limitPrice > 0)) errors.push('Enter a limit price.');
+
+  const total = roundToIncrement(toX18(p.totalSize), p.sizeIncrementX18, 'down');
+  const n = BigInt(Math.max(executions, 1));
+  const baseSlice = roundToIncrement(total / n, p.sizeIncrementX18, 'down');
+  const sliceAmounts = Array.from({ length: Number(n) }, (_, i) => (i === Number(n) - 1 ? total - baseSlice * (n - 1n) : baseSlice));
+  if (total === 0n || baseSlice === 0n) {
+    errors.push("Each execution is smaller than the market's minimum lot size. Increase the size or use fewer executions.");
+  }
+
+  const limitPriceX18 = roundToIncrement(toX18(p.limitPrice), p.priceIncrementX18, p.side === 'buy' ? 'down' : 'up');
+  // A buy fills below its limit, so value each slice at the lower of the limit and today's price.
+  const valuationPriceX18 =
+    p.marketPrice && p.marketPrice > 0 && toX18(p.marketPrice) < limitPriceX18 ? toX18(p.marketPrice) : limitPriceX18;
+  const smallestSliceValue = (baseSlice * valuationPriceX18) / 10n ** 18n;
+  if (baseSlice > 0n && smallestSliceValue < p.minOrderValueX18) {
+    errors.push(
+      `Each execution is worth about $${fromX18(smallestSliceValue).toFixed(2)}, below this market's $${fromX18(p.minOrderValueX18)} minimum. ` +
+        `Use at least ~$${Math.ceil(fromX18(p.minOrderValueX18) * executions * 1.02).toLocaleString('en-US')} in total, or fewer executions.`
+    );
+  }
+
+  const durationSeconds = (executions - 1) * p.intervalSeconds;
+  if (durationSeconds > TWAP_MAX_DURATION_SECONDS) {
+    errors.push(`Nado limits a TWAP to 25 hours; this schedule runs ${(durationSeconds / 3600).toFixed(1)} hours. Use fewer executions or a shorter interval.`);
+  }
+  // Nado requires now + duration <= expiration <= now + 25h. Leave an hour of slack for late executions.
+  const expiration = BigInt(nowSeconds + Math.min(durationSeconds + 3600, TWAP_MAX_DURATION_SECONDS));
+
+  if (p.marketPrice && p.limitPrice > 0) {
+    if (p.side === 'buy' && p.limitPrice < p.marketPrice) errors.push('Your max price is below the current price, so the buys would not fill.');
+    if (p.side === 'sell' && p.limitPrice > p.marketPrice) errors.push('Your min price is above the current price, so the sells would not fill.');
+  }
+
+  const sign = p.side === 'buy' ? 1n : -1n;
+  return {
+    amount: total * sign,
+    sliceAmounts: sliceAmounts.map((a) => a * sign),
+    limitPriceX18,
+    durationSeconds,
+    expiration,
+    appendixValue: encodeTwapValue(executions, p.slippagePercent / 100),
+    errors,
+  };
+}
+
+/** Places a TWAP on Nado's trigger service with one wallet signature. Nado runs every execution on its own servers. */
+export async function placeTwapOrder(network: NadoNetwork, sign: SignTypedDataAsync, p: TwapInput): Promise<{ digest: string; plan: TwapPlan }> {
+  const plan = planTwap(p, Math.floor(Date.now() / 1000));
+  if (plan.errors.length) throw new Error(plan.errors[0]);
+
+  // Custom amounts only when rounding left the last slice different; Nado then executes exactly these sizes.
+  const unevenSlices = plan.sliceAmounts.some((a) => a !== plan.sliceAmounts[0]);
+  const order = {
+    sender: p.sender,
+    priceX18: plan.limitPriceX18,
+    amount: plan.amount,
+    expiration: plan.expiration,
+    nonce: buildNonce(),
+    appendix: encodeAppendix({
+      orderType: OrderType.IOC,
+      reduceOnly: p.reduceOnly,
+      triggerType: unevenSlices ? TRIGGER_TWAP_CUSTOM_AMOUNTS : TRIGGER_TWAP,
+      value: plan.appendixValue,
+    }),
+  };
+  const signature = await signOrder(network, sign, p.productId, order);
+  const timeTrigger: { interval: number; amounts?: string[] } = { interval: p.intervalSeconds };
+  if (unevenSlices) timeTrigger.amounts = plan.sliceAmounts.map(String);
+  const json = await execute(network.triggerUrl, {
+    place_order: { product_id: p.productId, order: serializeOrder(order), signature, trigger: { time_trigger: timeTrigger } },
+  });
+  return { digest: json.data.digest, plan };
+}
+
+export type TwapExecutionState = 'pending' | 'executed' | 'failed' | 'cancelled';
+
+export interface TwapExecution {
+  id: number;
+  scheduledTime: number;
+  state: TwapExecutionState;
+  detail: string | null;
+}
+
+/** Progress of one TWAP. Public data keyed by the order digest, so no signature is needed. */
+export async function fetchTwapExecutions(network: NadoNetwork, digest: string): Promise<TwapExecution[]> {
+  const res = await fetch(`${network.triggerUrl}/query`, {
+    method: 'POST',
+    headers: gatewayHeaders,
+    body: JSON.stringify({ type: 'list_twap_executions', digest }),
+  });
+  const json = await res.json();
+  if (json.status !== 'success') throw new Error(json.error ?? 'Could not load TWAP progress');
+  return (json.data?.executions ?? []).map((e: any) => {
+    const status = e.status;
+    const state: TwapExecutionState =
+      typeof status === 'string' ? 'pending' : status.executed ? 'executed' : status.failed !== undefined ? 'failed' : 'cancelled';
+    const detail = typeof status === 'string' ? null : (status.failed ?? status.cancelled ?? null);
+    return { id: e.execution_id, scheduledTime: e.scheduled_time, state, detail };
+  });
+}
+
+/** Reads a TWAP's schedule back out of a pending trigger order, for listing it. */
+export function describeTwap(entry: TriggerOrderEntry) {
+  const value = BigInt(entry.order.order.appendix) >> 64n;
+  return {
+    executions: Number(value >> 32n),
+    slippagePercent: Number(value & 0xffffffffn) / 10_000,
+    intervalSeconds: Number(entry.order.trigger?.time_trigger?.interval ?? 0),
+  };
 }

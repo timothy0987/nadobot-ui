@@ -1,7 +1,6 @@
 import axios from 'axios';
 import webpush from 'web-push';
 import { ENV } from '../config/env';
-import { getSymbols } from '../trading/products';
 import { PushStore, type PushRecord } from './store';
 import type { SubscribeInput } from './validate';
 
@@ -22,6 +21,11 @@ export interface ArchiveFill {
 }
 
 const MAX_SUBSCRIPTIONS = 1000;
+const NETWORK_URLS: Record<number, { gateway: string; archive: string }> = {
+  57073: { gateway: 'https://gateway.prod.nado.xyz/v1', archive: 'https://archive.prod.nado.xyz/v1' },
+  763373: { gateway: 'https://gateway.test.nado.xyz/v1', archive: 'https://archive.test.nado.xyz/v1' },
+};
+const headers = { 'Accept-Encoding': 'gzip, br, deflate' };
 const MAX_PUSHES_PER_WALLET_PER_CYCLE = 5;
 const x18 = (v: string | undefined) => (v ? Number(BigInt(v)) / 1e18 : 0);
 const usd = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
@@ -29,7 +33,7 @@ const usd = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits
 let store: PushStore | null = null;
 
 export function initPush() {
-  store = new PushStore(ENV.DATA_DIR);
+  store = new PushStore(ENV.DATA_DIR, ENV.CHAIN_ID);
   webpush.setVapidDetails(ENV.PUSH_SUBJECT, store.vapid.publicKey, store.vapid.privateKey);
   console.log(`Push notifications ready: ${store.subscriptions.length} subscription(s) in ${ENV.DATA_DIR}`);
   return store;
@@ -56,11 +60,11 @@ export async function pushBotEvent(level: 'info' | 'warn' | 'error', message: st
   await Promise.all(targets.map((s) => send(s, { title, body: message, tag: `bot-${Date.now()}`, url: '/dashboard', level })));
 }
 
-async function fetchRecentFills(subaccount: string, limit: number): Promise<ArchiveFill[]> {
+async function fetchRecentFills(chainId: number, subaccount: string, limit: number): Promise<ArchiveFill[]> {
   const { data } = await axios.post(
-    ENV.NADO_ARCHIVE_URL,
+    NETWORK_URLS[chainId].archive,
     { matches: { subaccounts: [subaccount], limit } },
-    { headers: { 'Accept-Encoding': 'gzip, br, deflate' }, timeout: 15_000 }
+    { headers, timeout: 15_000 }
   );
   return (data.matches ?? []).map((m: any) => ({
     submissionIdx: BigInt(m.submission_idx),
@@ -90,13 +94,15 @@ export async function subscribe(input: SubscribeInput) {
   if (!existing && store.subscriptions.length >= MAX_SUBSCRIPTIONS) throw new Error('Subscription limit reached');
 
   // Start from the wallet's current newest fill so subscribing never replays its history.
-  let lastSeen = existing?.subaccount === input.subaccount ? existing.lastSeenSubmissionIdx : null;
+  const chainId = input.chainId ?? ENV.CHAIN_ID;
+  const sameWallet = existing?.subaccount === input.subaccount && existing?.chainId === chainId;
+  let lastSeen = sameWallet ? existing!.lastSeenSubmissionIdx : null;
   if (input.subaccount && lastSeen === null) {
-    const latest = await fetchRecentFills(input.subaccount, 1);
+    const latest = await fetchRecentFills(chainId, input.subaccount, 1);
     lastSeen = latest[0]?.submissionIdx.toString() ?? '0';
   }
 
-  const record: PushRecord = { ...input, createdAt: existing?.createdAt ?? new Date().toISOString(), lastSeenSubmissionIdx: lastSeen };
+  const record: PushRecord = { ...input, chainId, createdAt: existing?.createdAt ?? new Date().toISOString(), lastSeenSubmissionIdx: lastSeen };
   store.upsert(record);
   await send(record, {
     title: 'Nadobot notifications are on',
@@ -108,13 +114,15 @@ export async function subscribe(input: SubscribeInput) {
 
 export const unsubscribe = (endpoint: string) => store?.remove(endpoint);
 
-let symbolCache: { at: number; byId: Record<number, string> } | null = null;
-async function symbolById(productId: number) {
-  if (!symbolCache || Date.now() - symbolCache.at > 10 * 60_000) {
-    const symbols = await getSymbols();
-    symbolCache = { at: Date.now(), byId: Object.fromEntries(Object.values(symbols).map((s) => [s.product_id, s.symbol])) };
+const symbolCache: Record<number, { at: number; byId: Record<number, string> }> = {};
+async function symbolById(chainId: number, productId: number) {
+  const cached = symbolCache[chainId];
+  if (!cached || Date.now() - cached.at > 10 * 60_000) {
+    const { data } = await axios.post(`${NETWORK_URLS[chainId].gateway}/query`, { type: 'symbols' }, { headers, timeout: 15_000 });
+    const symbols: any[] = Object.values(data.data.symbols);
+    symbolCache[chainId] = { at: Date.now(), byId: Object.fromEntries(symbols.map((s) => [s.product_id, s.symbol])) };
   }
-  return symbolCache.byId[productId] ?? `product ${productId}`;
+  return symbolCache[chainId].byId[productId] ?? `product ${productId}`;
 }
 
 /** Every 30s, checks each subscribed wallet for new fills on Nado and pushes them. */
@@ -126,20 +134,23 @@ export function startFillWatcher() {
     try {
       const wallets = new Map<string, PushRecord[]>();
       for (const s of store.subscriptions) {
-        if (!s.subaccount || !s.topics.includes('fills')) continue;
-        wallets.set(s.subaccount, [...(wallets.get(s.subaccount) ?? []), s]);
+        if (!s.subaccount || !s.topics.includes('fills') || !NETWORK_URLS[s.chainId]) continue;
+        const key = `${s.chainId}:${s.subaccount}`;
+        wallets.set(key, [...(wallets.get(key) ?? []), s]);
       }
-      for (const [subaccount, subs] of wallets) {
+      for (const [key, subs] of wallets) {
+        const chainId = subs[0].chainId;
+        const subaccount = subs[0].subaccount!;
         try {
           const lastSeen = subs.map((s) => s.lastSeenSubmissionIdx).find((v) => v !== null) ?? null;
-          const { toPush, newest } = selectNewFills(await fetchRecentFills(subaccount, 20), lastSeen);
+          const { toPush, newest } = selectNewFills(await fetchRecentFills(chainId, subaccount, 20), lastSeen);
           for (const fill of toPush) {
-            const body = describeFill(fill, await symbolById(fill.productId));
+            const body = describeFill(fill, await symbolById(chainId, fill.productId));
             await Promise.all(subs.map((s) => send(s, { title: 'Your order filled', body, tag: `fill-${fill.submissionIdx}`, url: '/dashboard' })));
           }
-          if (newest !== null) store.setLastSeen(subaccount, newest.toString());
+          if (newest !== null) store.setLastSeen(chainId, subaccount, newest.toString());
         } catch (e: any) {
-          console.error(`Fill watch for ${subaccount.slice(0, 10)}… failed: ${e.message}`);
+          console.error(`Fill watch for ${key.slice(0, 18)}… failed: ${e.message}`);
         }
       }
     } finally {

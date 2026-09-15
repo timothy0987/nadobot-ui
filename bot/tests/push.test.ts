@@ -88,3 +88,35 @@ describe('describeFill', () => {
     expect(describeFill(fill(2, -0.001, 86.777, 7.89), 'BTC-PERP')).toBe('Sold 0.001 BTC-PERP at $86,777 · realized +$7.89');
   });
 });
+
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { PushStore } from '../src/push/store';
+
+describe('multi-network push', () => {
+  it('rejects networks Nado does not run on', () => {
+    const body = { subscription: sub('https://fcm.googleapis.com/fcm/send/abc'), subaccount: SUBACCOUNT, topics: ['fills'] };
+    expect(parseSubscribe({ ...body, chainId: 1 })).toEqual({ error: 'Unsupported network' });
+    const ok = parseSubscribe({ ...body, chainId: 57073 });
+    expect('error' in ok ? null : ok.chainId).toBe(57073);
+  });
+
+  it('backfills the network on records saved before it existed, and tracks last-seen per network', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nadobot-push-'));
+    const legacy = { endpoint: 'https://fcm.googleapis.com/fcm/send/old', keys: { p256dh: P256DH, auth: AUTH }, subaccount: SUBACCOUNT, topics: ['fills' as const], createdAt: 'x', lastSeenSubmissionIdx: '5' };
+    fs.writeFileSync(path.join(dir, 'push.json'), JSON.stringify({ vapid: { publicKey: 'p', privateKey: 'k' }, subscriptions: [legacy] }));
+
+    const store = new PushStore(dir, 763373);
+    expect(store.subscriptions[0].chainId).toBe(763373);
+
+    store.upsert({ ...legacy, endpoint: 'https://fcm.googleapis.com/fcm/send/new', chainId: 57073, lastSeenSubmissionIdx: '1' });
+    store.setLastSeen(763373, SUBACCOUNT, '9');
+    const byEndpoint = Object.fromEntries(store.subscriptions.map((s) => [s.endpoint.split('/').pop(), s.lastSeenSubmissionIdx]));
+    expect(byEndpoint).toEqual({ old: '9', new: '1' }); // the same wallet on mainnet is unaffected
+
+    const reloaded = new PushStore(dir, 763373);
+    expect(reloaded.subscriptions.map((s) => s.chainId)).toEqual([763373, 57073]);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});

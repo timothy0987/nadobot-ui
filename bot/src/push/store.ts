@@ -8,6 +8,7 @@ export interface PushRecord {
   endpoint: string;
   keys: { p256dh: string; auth: string };
   subaccount: string | null; // wallet subaccount whose fills to announce
+  chainId: number; // network of that wallet
   topics: PushTopic[];
   createdAt: string;
   lastSeenSubmissionIdx: string | null;
@@ -27,11 +28,15 @@ export class PushStore {
   private data: StoreData;
   private readonly file: string;
 
-  constructor(dir: string) {
+  /** @param defaultChainId network assumed for records saved before subscriptions carried one */
+  constructor(dir: string, defaultChainId: number) {
     this.file = path.join(dir, 'push.json');
     fs.mkdirSync(dir, { recursive: true });
     if (fs.existsSync(this.file)) {
       this.data = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      const legacy = this.data.subscriptions.filter((s) => s.chainId == null);
+      for (const s of legacy) s.chainId = defaultChainId;
+      if (legacy.length) this.save();
     } else {
       this.data = { vapid: webpush.generateVAPIDKeys(), subscriptions: [] };
       this.save();
@@ -59,8 +64,10 @@ export class PushStore {
     if (this.data.subscriptions.length !== before) this.save();
   }
 
-  setLastSeen(subaccount: string, submissionIdx: string) {
-    for (const s of this.data.subscriptions) if (s.subaccount === subaccount) s.lastSeenSubmissionIdx = submissionIdx;
+  setLastSeen(chainId: number, subaccount: string, submissionIdx: string) {
+    for (const s of this.data.subscriptions) {
+      if (s.subaccount === subaccount && s.chainId === chainId) s.lastSeenSubmissionIdx = submissionIdx;
+    }
     this.save();
   }
 

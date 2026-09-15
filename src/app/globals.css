@@ -491,3 +491,58 @@ button:disabled {
 .site-footer code {
   font-size: 0.8rem;
 }
+
+/* Segmented toggle (network, TWAP/DCA) */
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+}
+
+.segment {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.segment.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.segment.mainnet.active {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+}
+
+.mainnet-warning {
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.notice.mainnet-banner {
+  border-color: rgba(245, 158, 11, 0.45);
+  color: #fbbf24;
+  margin-bottom: 0.5rem;
+}
+
+.progress {
+  height: 6px;
+  margin: 0.4rem 0 0.3rem;
+  border-radius: 999px;
+  background: var(--glass-border);
+  overflow: hidden;
+}
+
+.progress > div {
+  height: 100%;
+  background: var(--accent-gradient);
+  transition: width 0.4s ease;
+}
