@@ -205,17 +205,23 @@ export default function HowItWorks() {
 
           <section id="trade-now">
             <h2>Trade now</h2>
-            <p className="doc-lead">Buy or sell at the market price, with a stop-loss and take-profit added once it fills.</p>
+            <p className="doc-lead">Buy or sell at the market price or at a price you choose, with an optional stop-loss and take-profit.</p>
             <ul>
               <li>
                 <strong>Market order</strong>: fills straight away against the best price, and never more than 1% past it. If it
                 can&apos;t fill within that, it&apos;s cancelled and nothing is traded.
               </li>
               <li>
+                <strong>Limit order</strong>: rests on the orderbook at your price until it fills, you cancel it, or it expires (7 days
+                by default). The price starts at the best bid for a buy or the best ask for a sell. <em>Post-only</em> (on by default)
+                makes sure it only adds liquidity: a post-only order that would fill against the book is refused before you sign.
+                Its stop-loss and take-profit are placed with it and stay dormant until it fills.
+              </li>
+              <li>
                 <strong>Size</strong> in USD, in the coin, or by risk (the most you&apos;d lose at the stop-loss).
               </li>
               <li>
-                <strong>Stop-loss and take-profit</strong> are optional. Once the order fills, Nadobot checks how much actually
+                <strong>Stop-loss and take-profit</strong> are optional. For a market order, once it fills, Nadobot checks how much actually
                 filled and asks you to sign exits sized to exactly that. They can only reduce the position.
               </li>
               <li>

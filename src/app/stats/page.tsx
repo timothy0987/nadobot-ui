@@ -76,7 +76,7 @@ export default function StatsPage() {
             <div>
               <span>Orders and schedules</span>
               <strong>{s.orderActions.toLocaleString()}</strong>
-              <small className="muted">market orders, plans, ladders, TWAP, DCA, closes</small>
+              <small className="muted">market and limit orders, plans, ladders, TWAP, DCA, closes</small>
             </div>
             <div>
               <span>Wallet sessions</span>

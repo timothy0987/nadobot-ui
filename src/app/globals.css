@@ -1499,3 +1499,9 @@ button:disabled {
     margin-left: 2.5rem;
   }
 }
+
+.ticket-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}

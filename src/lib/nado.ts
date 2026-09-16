@@ -1660,3 +1660,130 @@ export async function protectFill(
   }
   return placed;
 }
+
+/* ---------------------------------- limit orders ---------------------------------- */
+
+export interface LimitOrderPlan {
+  /** Signed: positive buys, negative sells. */
+  amount: bigint;
+  priceX18: bigint;
+  notional: number;
+  postOnly: boolean;
+  /** True when the price is at or through the other side of the book, so it would fill (at least partly) at once. */
+  crosses: boolean;
+  stop: { triggerX18: bigint; limitX18: bigint } | null;
+  takeProfit: { triggerX18: bigint; limitX18: bigint } | null;
+  errors: string[];
+  warnings: string[];
+}
+
+/**
+ * Pure: a resting limit order, optionally post-only (it only ever adds liquidity, and Nado cancels it instead of letting it
+ * take), with exits priced from the limit price. A buy rounds down and a sell rounds up, so neither pays worse than asked.
+ */
+export function planLimitOrder(p: {
+  side: 'long' | 'short';
+  price: number;
+  size: number;
+  postOnly: boolean;
+  bid: number | null;
+  ask: number | null;
+  stopLossPercent?: number | null;
+  takeProfitPercent?: number | null;
+  priceIncrementX18: bigint;
+  sizeIncrementX18: bigint;
+  minOrderValueX18: bigint;
+}): LimitOrderPlan {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const long = p.side === 'long';
+  if (!(p.price > 0)) errors.push('Enter a limit price.');
+  const priceX18 = p.price > 0 ? roundToIncrement(toX18(p.price), p.priceIncrementX18, long ? 'down' : 'up') : 0n;
+  const lots = roundToIncrement(toX18(Math.max(p.size || 0, 0)), p.sizeIncrementX18, 'down');
+  const amount = long ? lots : -lots;
+  if (lots === 0n) errors.push("Size is below this market's minimum lot size.");
+
+  const limit = fromX18(priceX18);
+  const notional = fromX18(lots) * limit;
+  if (limit > 0 && lots > 0n && toX18(notional) < p.minOrderValueX18) {
+    errors.push(`Order value ${notional.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} is below this market's $${fromX18(p.minOrderValueX18)} minimum.`);
+  }
+
+  const opposite = long ? p.ask : p.bid;
+  const crosses = Boolean(limit > 0 && opposite && (long ? limit >= opposite : limit <= opposite));
+  if (crosses && p.postOnly) {
+    errors.push(
+      `A post-only ${long ? 'buy' : 'sell'} must rest ${long ? 'below the ask' : 'above the bid'} (${formatPrice(opposite!, p.priceIncrementX18)}), or Nado cancels it. ${long ? 'Lower' : 'Raise'} the price, or turn post-only off to take liquidity.`
+    );
+  } else if (crosses) {
+    warnings.push(`This price is at or past the ${long ? 'ask' : 'bid'}, so it will fill straight away, like a market order.`);
+  }
+
+  const worse = long ? 1 - EXIT_SLIPPAGE : 1 + EXIT_SLIPPAGE;
+  const exitMode: RoundMode = long ? 'down' : 'up';
+  const exit = (percent: number | null | undefined, towardProfit: boolean) => {
+    if (!(percent && percent > 0) || !(limit > 0)) return null;
+    const up = long === towardProfit;
+    const trigger = limit * (up ? 1 + percent / 100 : 1 - percent / 100);
+    return {
+      triggerX18: roundToIncrement(toX18(trigger), p.priceIncrementX18, 'nearest'),
+      limitX18: roundToIncrement(toX18(trigger * worse), p.priceIncrementX18, exitMode),
+    };
+  };
+  if (p.stopLossPercent != null && p.stopLossPercent >= 100) errors.push('Stop-loss must be below 100%.');
+
+  return {
+    amount,
+    priceX18,
+    notional,
+    postOnly: p.postOnly,
+    crosses,
+    stop: exit(p.stopLossPercent, false),
+    takeProfit: exit(p.takeProfitPercent, true),
+    errors,
+    warnings,
+  };
+}
+
+/**
+ * Places the limit order and any exits: the entry first, then a stop-loss and take-profit that stay dormant until it fills
+ * (activating on partial fills too) and can only reduce the position. Returns every digest placed.
+ */
+export async function placeLimitOrder(
+  network: NadoNetwork,
+  sign: SignTypedDataAsync,
+  p: { productId: number; sender: `0x${string}`; plan: LimitOrderPlan; expiresInDays: number }
+): Promise<{ entry: string; exits: string[] }> {
+  if (p.plan.errors.length) throw new Error(p.plan.errors[0]);
+  const expiresInSeconds = Math.round(p.expiresInDays * 86400);
+  const entry = await placeOrder(network, sign, {
+    productId: p.productId,
+    sender: p.sender,
+    priceX18: p.plan.priceX18,
+    amount: p.plan.amount,
+    orderType: p.plan.postOnly ? OrderType.POST_ONLY : OrderType.DEFAULT,
+    expiresInSeconds,
+  });
+  const long = p.plan.amount > 0n;
+  const exits: string[] = [];
+  for (const [e, profit] of [
+    [p.plan.stop, false],
+    [p.plan.takeProfit, true],
+  ] as const) {
+    if (!e) continue;
+    const at = e.triggerX18.toString();
+    const above = long === profit;
+    exits.push(
+      await placeTriggerOrder(network, sign, {
+        productId: p.productId,
+        sender: p.sender,
+        priceX18: e.limitX18,
+        amount: -p.plan.amount,
+        priceRequirement: above ? { last_price_above: at } : { last_price_below: at },
+        dependsOn: entry,
+        expiresInSeconds: expiresInSeconds + 30 * 86400,
+      })
+    );
+  }
+  return { entry, exits };
+}

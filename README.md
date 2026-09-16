@@ -41,9 +41,11 @@ The dashboard opens on a candlestick chart of the selected market, before any wa
 
 The chart is SVG sized to its container, with a round-number price axis. Data helpers are in `src/lib/chart.ts`, tested in `tests/chart.test.ts`.
 
-## Trade now (market orders)
+## Trade now (market and limit orders)
 
 The *Trade now* ticket buys or sells at the market. It sends an IOC order at the touch with a 1% slippage cap (a buy lifts the ask, a sell hits the bid), sized in USD, in the coin, or by risk. It has an optional stop-loss and take-profit and the same risk preview as the other tools. After signing, the dashboard reads the position back to find how much actually filled. It then places reduce-only exits sized to exactly that fill, so a partial fill gets exits for what was traded. If the IOC finds no liquidity, the trader is told nothing was traded. When the account already holds the opposite side, exits are switched off, since the order first reduces that position. Counted as the anonymous `market_order` event.
+
+The ticket's *Limit* tab rests an order at the trader's price, defaulting to their own side of the book (best bid for a buy, best ask for a sell). A buy price rounds down and a sell rounds up to the tick. Post-only is on by default (order type bit `POST_ONLY`), and a post-only price at or through the other side is refused before signing; with post-only off, a crossing price shows a warning that it will fill straight away. Expiry defaults to 7 days. Stop-loss and take-profit are priced from the limit price and placed straight after as reduce-only price triggers that depend on the entry digest (`on_partial_fill: true`), so they activate only when it fills. The $100 minimum is checked at the limit price. Counted as the anonymous `limit_order` event. Logic in `planLimitOrder` and `placeLimitOrder`, tested in `tests/limit-order.test.ts`.
 
 ## Quick strategies
 

@@ -3,6 +3,7 @@ import { BOT_STATUS_URL } from './nado';
 export type EventName =
   | 'wallet_connected'
   | 'market_order'
+  | 'limit_order'
   | 'plan_created'
   | 'ladder_placed'
   | 'twap_started'
