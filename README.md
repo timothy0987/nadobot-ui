@@ -146,6 +146,7 @@ Optional environment variables:
 | Variable | Purpose |
 | --- | --- |
 | `NEXT_PUBLIC_BOT_STATUS_URL` | Bot status endpoint. Defaults to the production bot on Railway. |
+| `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | Reown (WalletConnect) project ID. Defaults to Nadobot's; add your site's domain to its allowlist on cloud.reown.com. |
 | `NEXT_PUBLIC_BUILDER_ID` | Your Nado builder ID (see below). |
 | `NEXT_PUBLIC_BUILDER_FEE_RATE_TENTH_BPS` | Builder fee in 0.1bps units (10 = 1bps = 0.01%). Ignored unless a builder ID is set. |
 

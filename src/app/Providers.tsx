@@ -35,7 +35,8 @@ const inkMainnet = {
 // Testnet listed first: this dashboard defaults to Nado testnet while the bot is being validated.
 const config = getDefaultConfig({
   appName: 'Nadobot (independent tool)',
-  projectId: '1f440a349bc9842f1fbf8efdb286dfdb', // Demo project ID
+  // Reown (WalletConnect) project; its allowlist must include the site's domain for QR and mobile wallets to connect.
+  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || '0fc27c03544e4bb6690991d986b418da',
   chains: [inkSepolia, inkMainnet],
   ssr: true,
 });
