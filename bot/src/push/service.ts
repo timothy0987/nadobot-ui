@@ -4,6 +4,7 @@ import { ENV } from '../config/env';
 import { PushStore, type PushRecord } from './store';
 import type { SubscribeInput } from './validate';
 import { alertTriggered, describeAlert, MAX_ALERTS_PER_SUBSCRIPTION, type PriceAlert } from './alerts';
+import { describeReminder, dueReminders, executionState, MAX_REMINDERS_PER_SUBSCRIPTION, shouldRemind, type ExecutionState, type ScheduleReminder } from './reminders';
 
 export interface PushPayload {
   title: string;
@@ -89,6 +90,21 @@ export function describeFill(f: ArchiveFill, symbol: string) {
   return `${f.baseFilled > 0 ? 'Bought' : 'Sold'} ${Math.abs(f.baseFilled)} ${symbol} at ${usd(price)}${pnl}`;
 }
 
+/**
+ * Pure: the record saved when a device (re)subscribes. The dashboard re-sends its subscription on every visit and when the
+ * wallet, network or topics change, so anything the device set up earlier (price alerts, DCA reminders) must carry over.
+ */
+export function buildSubscriptionRecord(input: SubscribeInput, chainId: number, existing: PushRecord | undefined, lastSeen: string | null): PushRecord {
+  return {
+    ...input,
+    chainId,
+    createdAt: existing?.createdAt ?? new Date().toISOString(),
+    lastSeenSubmissionIdx: lastSeen,
+    alerts: existing?.alerts,
+    reminders: existing?.reminders,
+  };
+}
+
 export async function subscribe(input: SubscribeInput) {
   if (!store) throw new Error('Push not initialised');
   const existing = store.subscriptions.find((s) => s.endpoint === input.endpoint);
@@ -103,7 +119,7 @@ export async function subscribe(input: SubscribeInput) {
     lastSeen = latest[0]?.submissionIdx.toString() ?? '0';
   }
 
-  const record: PushRecord = { ...input, chainId, createdAt: existing?.createdAt ?? new Date().toISOString(), lastSeenSubmissionIdx: lastSeen };
+  const record = buildSubscriptionRecord(input, chainId, existing, lastSeen);
   store.upsert(record);
   await send(record, {
     title: 'Nadobot notifications are on',
@@ -245,4 +261,69 @@ export function startPriceWatcher(fetchAll: (chainId: number) => Promise<Record<
     }
   };
   return setInterval(run, 30_000);
+}
+
+/* ---------------------------------- DCA renewal reminders ---------------------------------- */
+
+export function addReminder(endpoint: string, reminder: ScheduleReminder) {
+  if (!store) throw new Error('Push not initialised');
+  const record = store.subscriptions.find((s) => s.endpoint === endpoint);
+  if (!record) throw new Error('Turn on notifications for this device first');
+  const reminders = (record.reminders ?? []).filter((r) => r.digest !== reminder.digest);
+  if (reminders.length >= MAX_REMINDERS_PER_SUBSCRIPTION) throw new Error(`At most ${MAX_REMINDERS_PER_SUBSCRIPTION} schedule reminders at a time`);
+  store.setReminders(endpoint, [...reminders, reminder]);
+}
+
+export function removeReminder(endpoint: string, digest: string) {
+  const record = store?.subscriptions.find((s) => s.endpoint === endpoint);
+  if (!record) return false;
+  return store!.setReminders(endpoint, (record.reminders ?? []).filter((r) => r.digest !== digest.toLowerCase()));
+}
+
+async function fetchExecutionStates(chainId: number, digest: string): Promise<ExecutionState[]> {
+  const url = NETWORK_URLS[chainId].gateway.replace('gateway.', 'trigger.');
+  const { data } = await axios.post(`${url}/query`, { type: 'list_twap_executions', digest }, { headers, timeout: 15_000 });
+  if (data.status !== 'success') throw new Error(data.error ?? 'Could not load schedule');
+  return (data.data?.executions ?? []).map((e: any) => executionState(e.status));
+}
+
+/**
+ * Every minute, finds DCA schedules that have ended and nudges their device to start the next one. A schedule the
+ * trader cancelled is dropped silently; one still executing is checked again next time.
+ */
+export function startReminderWatcher(states: (chainId: number, digest: string) => Promise<ExecutionState[]> = fetchExecutionStates) {
+  let running = false;
+  const run = async () => {
+    if (!store || running) return;
+    running = true;
+    try {
+      const now = Math.floor(Date.now() / 1000);
+      for (const record of store.subscriptions) {
+        const due = dueReminders(record.reminders ?? [], now);
+        for (const reminder of due) {
+          let verdict: boolean;
+          try {
+            verdict = shouldRemind(await states(reminder.chainId, reminder.digest));
+          } catch (e: any) {
+            console.error(`Reminder check for ${reminder.digest.slice(0, 10)}… failed: ${e.message}`);
+            continue;
+          }
+          const stillPending = !verdict && now < reminder.endsAt + 6 * 3600;
+          if (verdict) {
+            await send(record, {
+              title: 'DCA finished',
+              body: describeReminder(reminder),
+              tag: `renew-${reminder.digest.slice(2, 14)}`,
+              url: `/dashboard?market=${encodeURIComponent(reminder.symbol)}&renew=${reminder.digest}`,
+            });
+          }
+          // Keep a pending schedule a few more hours in case Nado is slow to settle; otherwise it is done either way.
+          if (verdict || !stillPending) removeReminder(record.endpoint, reminder.digest);
+        }
+      }
+    } finally {
+      running = false;
+    }
+  };
+  return setInterval(run, 60_000);
 }

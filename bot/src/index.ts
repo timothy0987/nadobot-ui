@@ -12,7 +12,7 @@ import { account } from './viem/client';
 import { notify, recordError } from './alerts';
 import { botState } from './state';
 import { startStatusServer } from './status';
-import { initPush, startFillWatcher, startPriceWatcher } from './push/service';
+import { initPush, startFillWatcher, startPriceWatcher, startReminderWatcher } from './push/service';
 import { refreshRisk, currentBuyBlock, startRiskLoop } from './trading/risk';
 
 /** Would buying TRADE_AMOUNT more push the position past MAX_POSITION_SIZE? */
@@ -35,6 +35,7 @@ async function main() {
   initPush();
   startFillWatcher();
   startPriceWatcher();
+  startReminderWatcher();
   startStatusServer(account.address, sender);
 
   try {

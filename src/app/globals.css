@@ -1148,3 +1148,12 @@ button:disabled {
 .move-editor .notice {
   flex-basis: 100%;
 }
+
+/* DCA renewal reminder toggle */
+.remind-toggle {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  margin-top: 1rem;
+  font-size: 0.95rem;
+}

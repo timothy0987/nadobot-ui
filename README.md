@@ -61,6 +61,8 @@ Every slice is an IOC order bounded by a max slippage and a hard limit price ("n
 
 Nado's limits, checked before you sign: 1-500 executions, the whole schedule must finish within **25 hours**, and each slice must be worth at least the market's minimum order (**$100** on BTC-PERP).
 
+**Renewal reminders.** Because of the 25-hour cap, a daily DCA would stop silently. With *Remind me when it ends* ticked (and push on), the dashboard registers the schedule with the bot (`POST /push/reminders`, keyed by the device's push endpoint). A minute after the last execution is due, the bot asks Nado's `list_twap_executions` how it ended. A cancelled schedule is dropped silently, one still executing is checked again, and a finished one gets a push that opens `/dashboard?market=SYMBOL&renew=DIGEST`. The dashboard then fills in the same side, size, frequency and length from the schedule this browser saved, for the trader to review and sign. Cancelling a schedule in the dashboard also removes its reminder.
+
 ## Networks
 
 The dashboard switches between **Ink Sepolia (testnet)** and **Ink mainnet** from the header; the wallet is asked to change chains and the choice is remembered. Before the first mainnet order, traders must acknowledge that orders use real funds. Fill notifications follow the network the trader subscribed from.

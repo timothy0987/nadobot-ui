@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   assessTradeRisk,
   cancelOrders,
@@ -18,6 +18,8 @@ import {
   type TwapInput,
 } from '@/lib/nado';
 import { RiskPreview } from './RiskPreview';
+import { postBotJson } from '../notifications';
+import { reminderFor, renewalDraft, type SavedSchedule } from '@/lib/renewal';
 
 interface Props {
   account: AccountRisk | null;
@@ -27,23 +29,14 @@ interface Props {
   product: ProductSymbol;
   bid: number | null;
   ask: number | null;
+  /** This device's push subscription, used to remind the trader when a DCA ends. */
+  pushEndpoint: string | null;
+  /** Digest of a finished DCA to renew, from a reminder notification. */
+  renewDigest: string | null;
 }
 
 type Mode = 'twap' | 'dca';
-
-interface SavedTwap {
-  digest: string;
-  chainId: number;
-  sender: string;
-  productId: number;
-  symbol: string;
-  mode: Mode;
-  side: 'buy' | 'sell';
-  size: number;
-  executions: number;
-  intervalSeconds: number;
-  createdAt: number;
-}
+type SavedTwap = SavedSchedule;
 
 const STORAGE_KEY = 'nadobot:twaps';
 const usd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
@@ -76,7 +69,7 @@ function save(list: SavedTwap[]) {
  * TWAP: split a large order into timed slices to reduce price impact. DCA: the same Nado primitive used to buy (or
  * sell) steadily over hours. One signature; Nado executes every slice on its own servers.
  */
-export function TwapForm({ account, network, sign, sender, product, bid, ask }: Props) {
+export function TwapForm({ account, network, sign, sender, product, bid, ask, pushEndpoint, renewDigest }: Props) {
   const [mode, setMode] = useState<Mode>('twap');
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [unit, setUnit] = useState<'usd' | 'base'>('usd');
@@ -90,6 +83,26 @@ export function TwapForm({ account, network, sign, sender, product, bid, ask }: 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [saved, setSaved] = useState<SavedTwap[]>([]);
+  const [remind, setRemind] = useState(true);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Opened from a "DCA finished" notification: pre-fill the same schedule so renewing is one review and one signature.
+  useEffect(() => {
+    if (!renewDigest) return;
+    const draft = renewalDraft(loadSaved(), renewDigest, network.chainId, product.product_id);
+    setMode('dca');
+    if (draft) {
+      setSide(draft.side);
+      setUnit('base');
+      setAmount(draft.amount);
+      setDcaInterval(draft.intervalSeconds);
+      setDcaHours(draft.hours);
+      setMessage({ ok: true, text: 'Your last DCA finished. The same schedule is filled in below: review it and start the next one.' });
+    } else {
+      setMessage({ ok: true, text: 'Your DCA finished. Set up the next one below.' });
+    }
+    panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [renewDigest, network.chainId, product.product_id]);
 
   useEffect(() => setSaved(loadSaved()), []);
 
@@ -163,7 +176,28 @@ export function TwapForm({ account, network, sign, sender, product, bid, ask }: 
       const next = [entry, ...loadSaved().filter((s) => s.digest !== digest)];
       save(next);
       setSaved(next);
-      setMessage({ ok: true, text: `${mode === 'dca' ? 'DCA' : 'TWAP'} started. Nado runs every execution, so you can close this page.` });
+      let reminderNote = '';
+      if (mode === 'dca' && remind && pushEndpoint) {
+        try {
+          await postBotJson('/push/reminders', {
+            endpoint: pushEndpoint,
+            reminder: reminderFor({
+              digest,
+              chainId: network.chainId,
+              productId: product.product_id,
+              symbol: product.symbol,
+              side,
+              size: entry.size,
+              durationSeconds: plan.durationSeconds,
+              nowSeconds: Math.floor(Date.now() / 1000),
+            }),
+          });
+          reminderNote = " You'll get a notification when it ends, to start the next one.";
+        } catch (e: any) {
+          reminderNote = ` (The end-of-schedule reminder couldn't be set: ${e.message}.)`;
+        }
+      }
+      setMessage({ ok: true, text: `${mode === 'dca' ? 'DCA' : 'TWAP'} started. Nado runs every execution, so you can close this page.${reminderNote}` });
     } catch (e: any) {
       setMessage({ ok: false, text: `Could not start: ${e.shortMessage ?? e.message}` });
     } finally {
@@ -174,7 +208,7 @@ export function TwapForm({ account, network, sign, sender, product, bid, ask }: 
   const mine = saved.filter((s) => s.chainId === network.chainId && s.sender === sender);
 
   return (
-    <div className="glass panel">
+    <div className="glass panel" ref={panelRef}>
       <div className="panel-header">
         <div>
           <h3>TWAP &amp; DCA</h3>
@@ -288,6 +322,16 @@ export function TwapForm({ account, network, sign, sender, product, bid, ask }: 
         <RiskPreview account={account} risk={risk} productId={product.product_id} priceIncrementX18={product.price_increment_x18} />
       )}
 
+      {mode === 'dca' && (
+        <label className="remind-toggle">
+          <input type="checkbox" checked={remind && Boolean(pushEndpoint)} disabled={!pushEndpoint} onChange={(e) => setRemind(e.target.checked)} />
+          <span>
+            Remind me when it ends so I can start the next one
+            {!pushEndpoint && <span className="muted"> (turn on push notifications below first)</span>}
+          </span>
+        </label>
+      )}
+
       <div className="form-row">
         <button className="btn btn-primary" onClick={submit} disabled={blocked || busy}>
           {busy ? 'Confirm the signature in your wallet…' : `Start ${mode === 'dca' ? 'DCA' : 'TWAP'}`}
@@ -300,7 +344,7 @@ export function TwapForm({ account, network, sign, sender, product, bid, ask }: 
           <h4 style={{ marginTop: '1.75rem', marginBottom: '0.5rem' }}>Your schedules</h4>
           <ul className="activity">
             {mine.slice(0, 8).map((s) => (
-              <TwapProgress key={s.digest} saved={s} network={network} sign={sign} sender={sender} />
+              <TwapProgress key={s.digest} saved={s} network={network} sign={sign} sender={sender} pushEndpoint={pushEndpoint} />
             ))}
           </ul>
         </>
@@ -309,7 +353,19 @@ export function TwapForm({ account, network, sign, sender, product, bid, ask }: 
   );
 }
 
-function TwapProgress({ saved, network, sign, sender }: { saved: SavedTwap; network: NadoNetwork; sign: SignTypedDataAsync; sender: `0x${string}` }) {
+function TwapProgress({
+  saved,
+  network,
+  sign,
+  sender,
+  pushEndpoint,
+}: {
+  saved: SavedTwap;
+  network: NadoNetwork;
+  sign: SignTypedDataAsync;
+  sender: `0x${string}`;
+  pushEndpoint: string | null;
+}) {
   const [executions, setExecutions] = useState<TwapExecution[] | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -333,6 +389,8 @@ function TwapProgress({ saved, network, sign, sender }: { saved: SavedTwap; netw
     setError(null);
     try {
       await cancelOrders(network, sign, 'trigger', sender, [{ productId: saved.productId, digest: saved.digest }]);
+      // A cancelled schedule needs no renewal reminder. The bot also checks, so a failure here is harmless.
+      if (pushEndpoint) postBotJson('/push/reminders/delete', { endpoint: pushEndpoint, digest: saved.digest }).catch(() => {});
       setTimeout(load, 3000);
     } catch (e: any) {
       setError(e.shortMessage ?? e.message);

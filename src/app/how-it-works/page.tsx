@@ -278,7 +278,10 @@ export default function HowItWorks() {
               </li>
             </ul>
             <p>
-              Nado limits a schedule to 25 hours, so a longer DCA plan means starting a new schedule each day.
+              Nado limits a schedule to 25 hours, so a longer DCA plan means starting a new schedule each day. Tick{' '}
+              <em>Remind me when it ends</em> and Nadobot sends a notification when the schedule finishes. Tapping it opens the
+              dashboard with the same DCA filled in, ready for one signature. There&apos;s no reminder if you cancelled the schedule
+              yourself.
             </p>
           </section>
 

@@ -3,7 +3,8 @@ import { ENV } from './config/env';
 import { botState } from './state';
 import { parseSubscribe, isAllowedPushEndpoint } from './push/validate';
 import { parseAlert } from './push/alerts';
-import { addAlert, listAlerts, pushPublicKey, removeAlert, subscribe, unsubscribe, pushSubscriptionCount } from './push/service';
+import { parseReminder } from './push/reminders';
+import { addAlert, addReminder, listAlerts, pushPublicKey, removeAlert, removeReminder, subscribe, unsubscribe, pushSubscriptionCount } from './push/service';
 
 const MAX_BODY_BYTES = 16 * 1024;
 const WRITES_PER_MINUTE = 30;
@@ -124,6 +125,27 @@ export function startStatusServer(botAddress: string, subaccount: string) {
         if ('error' in alert) return send(res, 400, alert);
         addAlert(body.endpoint, alert);
         return send(res, 200, { alerts: listAlerts(body.endpoint) });
+      } catch (e: any) {
+        return send(res, 400, { error: e.message });
+      }
+    }
+
+    // DCA renewal reminders, also keyed by the device's push endpoint.
+    if (req.method === 'POST' && (url === '/push/reminders' || url === '/push/reminders/delete')) {
+      const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
+      if (rateLimited(ip)) return send(res, 429, { error: 'Too many requests' });
+      try {
+        const body = await readJson(req);
+        if (!isAllowedPushEndpoint(body?.endpoint)) return send(res, 400, { error: 'Unsupported push endpoint' });
+        if (url === '/push/reminders/delete') {
+          if (typeof body?.digest !== 'string' || body.digest.length > 80) return send(res, 400, { error: 'Invalid schedule' });
+          removeReminder(body.endpoint, body.digest);
+          return send(res, 200, { ok: true });
+        }
+        const reminder = parseReminder(body.reminder);
+        if ('error' in reminder) return send(res, 400, reminder);
+        addReminder(body.endpoint, reminder);
+        return send(res, 200, { ok: true });
       } catch (e: any) {
         return send(res, 400, { error: e.message });
       }

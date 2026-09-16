@@ -57,10 +57,22 @@ export default function Dashboard() {
   const markets = useMemo(() => tradableMarkets(symbols), [symbols]);
   const product = markets.find((m) => m.symbol === market);
 
-  // A price alert notification opens /dashboard?market=SYMBOL; otherwise fall back to the last market used here.
+  // Notifications open /dashboard?market=SYMBOL (price alerts) or also &renew=DIGEST (a finished DCA). Otherwise fall back
+  // to the last market used here. The link is cleared afterwards so a reload doesn't repeat it.
+  const [renewDigest, setRenewDigest] = useState<string | null>(null);
   useEffect(() => {
-    const fromLink = new URLSearchParams(window.location.search).get('market');
-    if (fromLink) return setMarket(fromLink.toUpperCase());
+    const params = new URLSearchParams(window.location.search);
+    const fromLink = params.get('market');
+    const renew = params.get('renew');
+    if (fromLink || renew) window.history.replaceState(null, '', window.location.pathname);
+    if (renew && /^0x[0-9a-fA-F]{64}$/.test(renew)) setRenewDigest(renew);
+    if (fromLink) {
+      setMarket(fromLink.toUpperCase());
+      try {
+        localStorage.setItem(MARKET_KEY, fromLink.toUpperCase());
+      } catch {}
+      return;
+    }
     try {
       const saved = localStorage.getItem(MARKET_KEY);
       if (saved) setMarket(saved);
@@ -255,7 +267,18 @@ export default function Dashboard() {
                   refresh();
                 }}
               />
-              <TwapForm key={`twap-${product.product_id}`} account={account} network={network} sign={sign} sender={sender} product={product} bid={quote?.bid ?? null} ask={quote?.ask ?? null} />
+              <TwapForm
+                key={`twap-${product.product_id}`}
+                account={account}
+                network={network}
+                sign={sign}
+                sender={sender}
+                product={product}
+                bid={quote?.bid ?? null}
+                ask={quote?.ask ?? null}
+                pushEndpoint={push.endpoint}
+                renewDigest={renewDigest}
+              />
               {position && (
                 <ProtectPosition
                   key={`protect-${product.product_id}`}

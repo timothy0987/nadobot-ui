@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import webpush from 'web-push';
 import type { PriceAlert } from './alerts';
+import type { ScheduleReminder } from './reminders';
 
 export type PushTopic = 'bot' | 'fills';
 
@@ -15,6 +16,8 @@ export interface PushRecord {
   lastSeenSubmissionIdx: string | null;
   /** Price alerts this device asked for. */
   alerts?: PriceAlert[];
+  /** DCA schedules this device wants a renewal reminder for. */
+  reminders?: ScheduleReminder[];
 }
 
 interface StoreData {
@@ -56,7 +59,11 @@ export class PushStore {
 
   upsert(record: PushRecord) {
     // Stored as a copy: the caller keeping a reference must not be able to change saved data by accident.
-    const stored = { ...record, alerts: record.alerts ? [...record.alerts] : undefined };
+    const stored = {
+      ...record,
+      alerts: record.alerts ? [...record.alerts] : undefined,
+      reminders: record.reminders ? [...record.reminders] : undefined,
+    };
     const i = this.data.subscriptions.findIndex((s) => s.endpoint === record.endpoint);
     if (i >= 0) this.data.subscriptions[i] = stored;
     else this.data.subscriptions.push(stored);
@@ -74,6 +81,15 @@ export class PushStore {
     const record = this.data.subscriptions.find((s) => s.endpoint === endpoint);
     if (!record) return false;
     record.alerts = alerts;
+    this.save();
+    return true;
+  }
+
+  /** Replaces one subscription's schedule reminders. Returns false when the subscription is gone. */
+  setReminders(endpoint: string, reminders: ScheduleReminder[]) {
+    const record = this.data.subscriptions.find((s) => s.endpoint === endpoint);
+    if (!record) return false;
+    record.reminders = reminders;
     this.save();
     return true;
   }
