@@ -328,6 +328,10 @@ export default function HowItWorks() {
                 <strong>History</strong> of closed positions: entry and exit prices, time held, fees plus funding, and net PnL.
               </li>
               <li>
+                <strong>Share a trade</strong>: turn any closed position into an image showing its net return, to post on X,
+                Telegram or anywhere else. Dollar amounts are hidden unless you choose to show them.
+              </li>
+              <li>
                 <strong>24h, 7d and 30d</strong>: realized PnL after fees, volume, number of fills and maker share, lifetime volume, and
                 a chart of volume with cumulative PnL.
               </li>

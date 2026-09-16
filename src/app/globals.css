@@ -1157,3 +1157,26 @@ button:disabled {
   margin-top: 1rem;
   font-size: 0.95rem;
 }
+
+/* Shareable PnL card */
+.share-card {
+  margin-top: 1rem;
+  border-color: var(--accent-color);
+}
+
+.share-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.share-card-canvas {
+  display: block;
+  width: 100%;
+  max-width: 720px;
+  height: auto;
+  aspect-ratio: 1200 / 630;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+}

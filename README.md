@@ -32,6 +32,7 @@ The connected wallet's trading on Nado, across every market and every app it tra
 - **Open positions** at Nado's oracle (mark) price: entry, value, unrealized PnL and funding. Sizes come from the gateway, so a fresh fill shows up before the indexer catches up.
 - **Close or trim in one click**: 25%, 50% or all of a position, as an IOC reduce-only order capped 1% past the touch, after a confirmation showing the exact size, value and worst fill price. Partial closes round down to whole lots and are refused below the market minimum order.
 - **History** of closed positions: entry → exit, time held, fees plus funding, and net PnL. Older pages load on demand.
+- **Shareable PnL cards**: *Share* on a closed position draws a 1200×630 image in the browser (canvas, no server). It shows the net return after fees and funding, as a share of the largest position's entry value, plus entry, exit, time held and date, with the site address. Dollar amounts are off by default. The trader can download it, copy it, use the device share sheet where supported, or open a prefilled post on X.
 - **24h / 7d / 30d**: realized PnL after fees, volume, fill count and maker share, plus lifetime volume. A chart shows volume per hour (24h) or per day, with cumulative realized PnL over it.
 - With `NEXT_PUBLIC_BUILDER_ID` set, **Via Nadobot** shows how much of the wallet's volume carried the builder code, read from each filled order's appendix.
 

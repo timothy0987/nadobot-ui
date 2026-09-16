@@ -27,6 +27,8 @@ import {
   type ProductSymbol,
   type SignTypedDataAsync,
 } from '@/lib/nado';
+import { pnlCardData } from '@/lib/pnlCard';
+import { ShareCard } from './ShareCard';
 
 interface Props {
   network: NadoNetwork;
@@ -80,6 +82,7 @@ export function PortfolioPanel({ network, sign, sender, symbols, onClosed }: Pro
   const [quote, setQuote] = useState<{ bid: number; ask: number } | null>(null);
   const [closing, setClosing] = useState(false);
   const [closeResult, setCloseResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [sharing, setSharing] = useState<PositionRecord | null>(null);
 
   const bySymbolId = Object.fromEntries(Object.values(symbols).map((s) => [s.product_id, s]));
   const name = (productId: number) => bySymbolId[productId]?.symbol ?? `Market ${productId}`;
@@ -95,6 +98,7 @@ export function PortfolioPanel({ network, sign, sender, symbols, onClosed }: Pro
     setError(null);
     setPending(null);
     setCloseResult(null);
+    setSharing(null);
   }, [network, sender]);
 
   const loadOpen = useCallback(async () => {
@@ -377,6 +381,13 @@ export function PortfolioPanel({ network, sign, sender, symbols, onClosed }: Pro
         <p className="muted" style={{ marginTop: '1rem' }}>No closed positions yet.</p>
       ) : (
         <>
+          {sharing && (
+            <ShareCard
+              key={`${sharing.productId}-${sharing.openId}`}
+              data={pnlCardData(sharing, name(sharing.productId), bySymbolId[sharing.productId]?.price_increment_x18)}
+              onClose={() => setSharing(null)}
+            />
+          )}
           <div className="table-scroll" style={{ marginTop: '1rem' }}>
             <table className="data-table portfolio-table">
               <thead>
@@ -389,6 +400,7 @@ export function PortfolioPanel({ network, sign, sender, symbols, onClosed }: Pro
                   <th>Held</th>
                   <th>Fees + funding</th>
                   <th>Net PnL</th>
+                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -409,6 +421,11 @@ export function PortfolioPanel({ network, sign, sender, symbols, onClosed }: Pro
                       <td>{duration(p.updatedAt - p.openedAt)}</td>
                       <td>{signedUsd(p.funding - p.fees)}</td>
                       <td style={{ color: pnlColor(net) }}>{signedUsd(net)}</td>
+                      <td>
+                        <button className="btn btn-secondary btn-sm" onClick={() => setSharing(p)}>
+                          Share
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
