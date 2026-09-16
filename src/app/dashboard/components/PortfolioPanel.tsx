@@ -27,6 +27,7 @@ import {
   type ProductSymbol,
   type SignTypedDataAsync,
 } from '@/lib/nado';
+import { track } from '@/lib/analytics';
 import { pnlCardData } from '@/lib/pnlCard';
 import { ShareCard } from './ShareCard';
 
@@ -165,6 +166,7 @@ export function PortfolioPanel({ network, sign, sender, symbols, onClosed }: Pro
     setClosing(true);
     try {
       await closePosition(network, sign, { productId: pending.productId, sender, plan });
+      track('position_closed', network.chainId, plan.notional);
       setPending(null);
       setCloseResult({ ok: true, text: `Closing order sent for ${pending.symbol}. It fills immediately or is cancelled.` });
       setTimeout(() => {
@@ -385,6 +387,7 @@ export function PortfolioPanel({ network, sign, sender, symbols, onClosed }: Pro
             <ShareCard
               key={`${sharing.productId}-${sharing.openId}`}
               data={pnlCardData(sharing, name(sharing.productId), bySymbolId[sharing.productId]?.price_increment_x18)}
+              chainId={network.chainId}
               onClose={() => setSharing(null)}
             />
           )}

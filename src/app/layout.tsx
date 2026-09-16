@@ -48,6 +48,7 @@ export default function RootLayout({
               <a href="/how-it-works">How it works</a>
               <a href="/terms">Terms of use</a>
               <a href="/privacy">Privacy</a>
+              <a href="/stats">Stats</a>
             </p>
           </footer>
         </Providers>

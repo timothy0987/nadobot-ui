@@ -358,7 +358,8 @@ export default function HowItWorks() {
             <p className="muted">
               To send push notifications, Nadobot&apos;s notification service stores your browser&apos;s push subscription and your
               public Nado account ID, which it uses to watch for fills. It never receives your keys. Turning notifications off deletes the
-              subscription. See the <Link href="/privacy">Privacy notice</Link> for details.
+              subscription. Nadobot also counts anonymous usage (which tools are used, with no wallet or identifier), shown at{' '}
+              <Link href="/stats">Stats</Link>. See the <Link href="/privacy">Privacy notice</Link> for details.
             </p>
           </section>
 

@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { CARD_HEIGHT, CARD_WIDTH, drawPnlCard, shareText, type PnlCardData } from '@/lib/pnlCard';
+import { track } from '@/lib/analytics';
 
 /**
  * A shareable image of a closed trade. Traders posting results is how new traders find Nadobot, so the card credits
  * Nado and carries the site address. Dollar amounts are off by default so nobody reveals their size by accident.
  */
-export function ShareCard({ data, onClose }: { data: PnlCardData; onClose: () => void }) {
+export function ShareCard({ data, chainId, onClose }: { data: PnlCardData; chainId: number; onClose: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [showDollars, setShowDollars] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
@@ -40,12 +41,14 @@ export function ShareCard({ data, onClose }: { data: PnlCardData; onClose: () =>
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     setStatus('Image saved.');
+    track('card_shared', chainId);
   }
 
   async function copy() {
     try {
       await navigator.clipboard.write([new ClipboardItem({ 'image/png': await toBlob() })]);
       setStatus('Image copied. Paste it into your post.');
+      track('card_shared', chainId);
     } catch {
       setStatus("This browser can't copy images. Use Download instead.");
     }
@@ -55,6 +58,7 @@ export function ShareCard({ data, onClose }: { data: PnlCardData; onClose: () =>
     try {
       const file = new File([await toBlob()], fileName, { type: 'image/png' });
       await navigator.share({ files: [file], text: shareText(data), url: window.location.origin });
+      track('card_shared', chainId);
     } catch (e: any) {
       if (e?.name !== 'AbortError') setStatus("Couldn't open sharing. Use Download instead.");
     }
@@ -64,6 +68,7 @@ export function ShareCard({ data, onClose }: { data: PnlCardData; onClose: () =>
     const url = `https://x.com/intent/post?text=${encodeURIComponent(shareText(data))}&url=${encodeURIComponent(window.location.origin)}`;
     window.open(url, '_blank', 'noopener,noreferrer');
     setStatus('Attach the image (Download or Copy first) to your post on X.');
+    track('card_shared', chainId);
   }
 
   return (

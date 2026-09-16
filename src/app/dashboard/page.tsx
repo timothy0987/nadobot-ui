@@ -32,6 +32,7 @@ import { PortfolioPanel } from './components/PortfolioPanel';
 import { PriceAlerts } from './components/PriceAlerts';
 import { MainnetGate, NetworkSwitch, useDashboardNetwork } from './components/NetworkSwitch';
 import { MarketPicker, tradableMarkets } from './components/MarketPicker';
+import { track } from '@/lib/analytics';
 
 const DEFAULT_MARKET = 'BTC-PERP';
 const MARKET_KEY = 'nadobot:market';
@@ -87,6 +88,16 @@ export default function Dashboard() {
       localStorage.setItem(MARKET_KEY, symbol);
     } catch {}
   };
+
+  // Counted once per browser session: how many sessions connect a wallet, not who connected.
+  useEffect(() => {
+    if (!isConnected || !onSupportedChain) return;
+    try {
+      if (sessionStorage.getItem('nadobot:counted-connect')) return;
+      sessionStorage.setItem('nadobot:counted-connect', '1');
+    } catch {}
+    track('wallet_connected', network.chainId);
+  }, [isConnected, onSupportedChain, network.chainId]);
 
   const bot = useBotStatus();
   const marketIds = useMemo(() => markets.map((m) => m.product_id), [markets]);

@@ -14,6 +14,7 @@ import {
   type ProductSymbol,
   type SignTypedDataAsync,
 } from '@/lib/nado';
+import { track } from '@/lib/analytics';
 import { RiskPreview } from './RiskPreview';
 
 interface Props {
@@ -114,6 +115,7 @@ export function TradePlanForm({ account, network, sign, sender, product, bid, as
     setResult(null);
     try {
       await createTradePlan(network, sign, input);
+      track('plan_created', network.chainId, notional);
       setResult({ ok: true, text: 'Plan is live on Nado. You can close this page: the entry, stop-loss and take-profit all run on Nado’s servers.' });
       onCreated();
     } catch (e: any) {

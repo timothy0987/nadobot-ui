@@ -20,6 +20,7 @@ import {
   type ProductSymbol,
   type SignTypedDataAsync,
 } from '@/lib/nado';
+import { track } from '@/lib/analytics';
 import { RiskPreview } from './RiskPreview';
 
 interface Props {
@@ -193,6 +194,7 @@ export function LadderForm({ account, network, sign, sender, product, bid, ask, 
     });
     try {
       const { placed } = await placeLadder(network, sign, input, (signed, total) => setProgress({ signed, total }));
+      track('ladder_placed', network.chainId, plan.rungs.reduce((sum, r) => sum + abs(r.amount) * fromX18(r.priceX18), 0));
       persist(record(placed, true));
       setMessage({
         ok: true,

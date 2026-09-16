@@ -14,6 +14,7 @@ import {
   type ProductSymbol,
   type SignTypedDataAsync,
 } from '@/lib/nado';
+import { track } from '@/lib/analytics';
 
 interface Props {
   account: AccountRisk | null;
@@ -64,6 +65,7 @@ export function ProtectPosition({ account, network, sign, sender, product, posit
         priceRequirement: isLong ? { last_price_above: takeProfitX18.toString() } : { last_price_below: takeProfitX18.toString() },
       });
       setMessage({ ok: true, text: 'Stop-loss and take-profit placed. They stay active on Nado even if you close this page.' });
+      track('position_protected', network.chainId);
       onPlaced();
     } catch (e: any) {
       setMessage({ ok: false, text: `Failed to set protection: ${e.shortMessage ?? e.message}` });

@@ -4,6 +4,7 @@ import { botState } from './state';
 import { parseSubscribe, isAllowedPushEndpoint } from './push/validate';
 import { parseAlert } from './push/alerts';
 import { parseReminder } from './push/reminders';
+import { parseEvent, UsageStore } from './analytics';
 import { addAlert, addReminder, listAlerts, pushPublicKey, removeAlert, removeReminder, subscribe, unsubscribe, pushSubscriptionCount } from './push/service';
 
 const MAX_BODY_BYTES = 16 * 1024;
@@ -45,13 +46,25 @@ function readJson(req: http.IncomingMessage): Promise<any> {
 }
 
 const send = (res: http.ServerResponse, status: number, body: unknown) =>
-  res.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(body));
+  status === 204 ? res.writeHead(204).end() : res.writeHead(status, { 'Content-Type': 'application/json' }).end(JSON.stringify(body));
 
 /**
  * The dashboard's API: read-only status (only public on-chain facts and non-sensitive settings) plus push
  * subscription management. Nothing here can place orders or reveal keys.
  */
 export function startStatusServer(botAddress: string, subaccount: string) {
+  const usage = new UsageStore(ENV.DATA_DIR);
+  // Railway stops the old container with SIGTERM on every deploy: save the latest counts first.
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, () => {
+      try {
+        usage.flush();
+      } finally {
+        process.exit(0);
+      }
+    });
+  }
+
   const server = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -128,6 +141,25 @@ export function startStatusServer(botAddress: string, subaccount: string) {
       } catch (e: any) {
         return send(res, 400, { error: e.message });
       }
+    }
+
+    // Anonymous usage counts: the event name, network and order value only. Nothing identifying is read or stored.
+    if (req.method === 'POST' && url === '/events') {
+      const ip = String(req.headers['x-forwarded-for'] ?? req.socket.remoteAddress ?? '').split(',')[0].trim();
+      if (rateLimited(ip)) return send(res, 429, { error: 'Too many requests' });
+      try {
+        const event = parseEvent(await readJson(req));
+        if ('error' in event) return send(res, 400, event);
+        usage.record(event);
+        return send(res, 204, null);
+      } catch (e: any) {
+        return send(res, 400, { error: e.message });
+      }
+    }
+
+    if (req.method === 'GET' && url === '/stats') {
+      const days = Number(new URL(req.url ?? '/', 'http://x').searchParams.get('days') ?? 30);
+      return send(res, 200, usage.summary(days));
     }
 
     // DCA renewal reminders, also keyed by the device's push endpoint.

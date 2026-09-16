@@ -18,6 +18,7 @@ import {
   type SignTypedDataAsync,
   type TriggerOrderEntry,
 } from '@/lib/nado';
+import { track } from '@/lib/analytics';
 import { ladderRoles, type SavedLadder } from './LadderForm';
 
 interface Props {
@@ -165,6 +166,7 @@ export function MyOrders({ network, bid, ask, sign, sender, product, refreshKey 
         dependsOn: row.movable.dependsOn,
       });
       setMoving(null);
+      track('exit_moved', network.chainId);
       setNotice(
         result.oldCancelled
           ? { ok: true, text: `${row.kind} moved. The old one has been cancelled.` }

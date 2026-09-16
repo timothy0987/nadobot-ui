@@ -17,6 +17,7 @@ import {
   type TwapExecution,
   type TwapInput,
 } from '@/lib/nado';
+import { track } from '@/lib/analytics';
 import { RiskPreview } from './RiskPreview';
 import { postBotJson } from '../notifications';
 import { reminderFor, renewalDraft, type SavedSchedule } from '@/lib/renewal';
@@ -160,6 +161,7 @@ export function TwapForm({ account, network, sign, sender, product, bid, ask, pu
     setMessage(null);
     try {
       const { digest } = await placeTwapOrder(network, sign, input);
+      track(mode === 'dca' ? 'dca_started' : 'twap_started', network.chainId, Math.abs(fromX18(plan.amount)) * (market ?? 0));
       const entry: SavedTwap = {
         digest,
         chainId: network.chainId,
@@ -193,6 +195,7 @@ export function TwapForm({ account, network, sign, sender, product, bid, ask, pu
             }),
           });
           reminderNote = " You'll get a notification when it ends, to start the next one.";
+          track('dca_reminder_set', network.chainId);
         } catch (e: any) {
           reminderNote = ` (The end-of-schedule reminder couldn't be set: ${e.message}.)`;
         }

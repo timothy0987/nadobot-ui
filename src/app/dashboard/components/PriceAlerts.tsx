@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { formatPrice, priceInputValue, type NadoNetwork, type ProductSymbol } from '@/lib/nado';
 import { postBotJson } from '../notifications';
+import { track } from '@/lib/analytics';
 
 export interface PriceAlert {
   id: string;
@@ -72,6 +73,7 @@ export function PriceAlerts({ network, product, bid, ask, endpoint, pushEnabled 
       });
       setAlerts(alerts ?? []);
       setPrice('');
+      track('alert_set', network.chainId);
     } catch (e: any) {
       setError(e.message);
     } finally {

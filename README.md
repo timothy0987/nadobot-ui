@@ -106,6 +106,16 @@ Optional environment variables:
 | `NEXT_PUBLIC_BUILDER_ID` | Your Nado builder ID (see below). |
 | `NEXT_PUBLIC_BUILDER_FEE_RATE_TENTH_BPS` | Builder fee in 0.1bps units (10 = 1bps = 0.01%). Ignored unless a builder ID is set. |
 
+## Usage stats
+
+To show which tools traders use and how much order value flows through Nadobot (e.g. for the builder program), the dashboard sends anonymous events to the bot: `POST /events` with `{ name, chainId, valueUsd }` only. The events are `wallet_connected` (once per browser session), `plan_created`, `ladder_placed`, `twap_started`, `dca_started`, `position_protected`, `position_closed`, `exit_moved`, `alert_set`, `dca_reminder_set` and `card_shared`.
+
+- The bot keeps daily totals per network and event in `DATA_DIR/usage.json` for 180 days, and saves them on shutdown.
+- No wallet address, account, market, IP, cookie or identifier is sent or stored. Unknown event names and extra fields are rejected.
+- Browsers sending Do Not Track or Global Privacy Control send nothing.
+- `GET /stats?days=30` returns the totals, and the public **/stats** page shows order value placed, orders and schedules, wallet sessions, shares, a daily chart and a per-tool table.
+- Value is order size at placement, not what filled.
+
 ## Tests
 
 ```bash
