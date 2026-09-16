@@ -18,6 +18,18 @@ All three live on Nado's servers, so the plan runs whether or not the dashboard 
 
 **Why not a shared bot key?** Nado's [linked signers](https://docs.nado.xyz/developer-resources/get-started/linked-signers) have full permissions, including withdrawals. A single bot key linked to many traders' accounts would let one server compromise drain every account. Trade plans avoid that entirely: nobody but the trader ever holds a key that controls their funds.
 
+## Price chart
+
+The dashboard opens on a candlestick chart of the selected market, before any wallet is connected, so traders can read the market and act without leaving Nadobot.
+
+- **Timeframes:** 15m, 1H, 4H and 1D candles from Nado's archive `candlesticks` query, refreshed every 30 seconds.
+- **Quiet periods:** Nado only records a candle when something trades, so gaps are filled with flat candles at the previous close to keep time even.
+- **Header:** last price, 24h change, high, low and traded value (from hourly candles), and Nado's funding rate, the 24-hour rate from the archive `funding_rate` query, with whether longs or shorts are paying.
+- **Your position:** when you hold one, its entry and estimated liquidation price are drawn as lines. A liquidation price outside the visible range is marked at the edge rather than squashing the chart.
+- **Hover:** shows a candle's time and open, high, low and close.
+
+The chart is SVG sized to its container, with a round-number price axis. Data helpers are in `src/lib/chart.ts`, tested in `tests/chart.test.ts`.
+
 ## Trade now (market orders)
 
 The *Trade now* ticket buys or sells at the market. It sends an IOC order at the touch with a 1% slippage cap (a buy lifts the ask, a sell hits the bid), sized in USD, in the coin, or by risk. It has an optional stop-loss and take-profit and the same risk preview as the other tools. After signing, the dashboard reads the position back to find how much actually filled. It then places reduce-only exits sized to exactly that fill, so a partial fill gets exits for what was traded. If the IOC finds no liquidity, the trader is told nothing was traded. When the account already holds the opposite side, exits are switched off, since the order first reduces that position. Counted as the anonymous `market_order` event.

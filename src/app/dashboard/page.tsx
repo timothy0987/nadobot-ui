@@ -35,6 +35,7 @@ import { MarketPicker, tradableMarkets } from './components/MarketPicker';
 import { track } from '@/lib/analytics';
 import { QuickStrategies } from './components/QuickStrategies';
 import { TradeTicket } from './components/TradeTicket';
+import { PriceChart } from './components/PriceChart';
 import type { Preset } from '@/lib/presets';
 
 const DEFAULT_MARKET = 'BTC-PERP';
@@ -174,6 +175,19 @@ export default function Dashboard() {
       </div>
 
       {switchError && <div className="notice error">{switchError}</div>}
+
+      {product && (
+        <PriceChart
+          key={`chart-${network.chainId}-${product.product_id}`}
+          network={network}
+          product={product}
+          bid={quote?.bid ?? null}
+          ask={quote?.ask ?? null}
+          entryPrice={position ? fromX18(position.avgEntryPriceX18) : null}
+          liquidationPrice={account ? liquidationPrice(account, product.product_id) : null}
+          positionSide={position ? (position.amount > 0n ? 'long' : 'short') : null}
+        />
+      )}
 
       {!isConnected || !sender ? (
         <div className="glass panel" style={{ textAlign: 'center', padding: '3rem 2rem' }}>

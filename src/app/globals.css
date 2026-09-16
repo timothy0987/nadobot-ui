@@ -1306,3 +1306,112 @@ button:disabled {
   margin: 0;
   width: auto;
 }
+
+/* Price chart */
+.chart-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+}
+
+.chart-price {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-change {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-meta {
+  margin-top: 0.3rem;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  min-height: 1.2em;
+}
+
+.chart-wrap svg {
+  display: block;
+  cursor: crosshair;
+}
+
+.chart-placeholder {
+  display: grid;
+  place-items: center;
+}
+
+.candle line {
+  stroke-width: 1;
+}
+
+.candle.up line,
+.candle.up rect {
+  stroke: #10b981;
+  fill: #10b981;
+}
+
+.candle.down line,
+.candle.down rect {
+  stroke: #ef4444;
+  fill: #ef4444;
+}
+
+.candle rect.volume {
+  opacity: 0.25;
+  stroke: none;
+}
+
+.chart-grid line {
+  stroke: var(--glass-border);
+}
+
+.chart-grid text,
+.chart-time {
+  fill: var(--text-secondary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-crosshair {
+  stroke: var(--text-secondary);
+  stroke-dasharray: 3 3;
+  opacity: 0.6;
+}
+
+.chart-level line {
+  stroke-dasharray: 5 4;
+  stroke-width: 1;
+}
+
+.chart-level text {
+  font-size: 11px;
+  font-weight: 600;
+  fill: #fff;
+}
+
+.chart-level.last line {
+  stroke: var(--text-secondary);
+}
+
+.chart-level.last rect {
+  fill: #374151;
+}
+
+.chart-level.entry line {
+  stroke: var(--accent-color);
+}
+
+.chart-level.entry rect {
+  fill: var(--accent-color);
+}
+
+.chart-level.liquidation line {
+  stroke: #f59e0b;
+}
+
+.chart-level.liquidation rect {
+  fill: #b45309;
+}
