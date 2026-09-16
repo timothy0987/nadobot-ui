@@ -42,7 +42,8 @@ export default function Privacy() {
             <li>your network choice (testnet or mainnet), selected market, and whether you&apos;ve confirmed mainnet trading;</li>
             <li>summaries of the ladders and TWAP or DCA schedules you created, so they can be listed and cancelled;</li>
             <li>which push notification topics you chose;</li>
-            <li>a note that this browser session has already been counted as a wallet session, so it is counted only once.</li>
+            <li>a note that this browser session has already been counted as a wallet session, so it is counted only once;</li>
+            <li>whether you hid the getting-started checklist.</li>
           </ul>
           <p>
             The wallet connection library also stores your connection state locally so you stay connected. Clearing this site&apos;s data in

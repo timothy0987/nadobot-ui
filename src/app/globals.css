@@ -1415,3 +1415,87 @@ button:disabled {
 .chart-level.liquidation rect {
   fill: #b45309;
 }
+
+/* Getting started checklist */
+.getting-started {
+  border-color: rgba(59, 130, 246, 0.45);
+}
+
+.getting-started .progress {
+  margin: 0 0 1rem;
+}
+
+.onboarding-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.onboarding-steps li {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--glass-border);
+}
+
+.onboarding-steps li:first-child {
+  border-top: none;
+}
+
+.step-mark {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  border: 2px solid var(--glass-border);
+}
+
+.onboarding-steps li.done .step-mark {
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
+}
+
+.onboarding-steps li.next .step-mark {
+  border-color: var(--accent-color);
+}
+
+.onboarding-steps li.done .step-body strong {
+  color: var(--text-secondary);
+}
+
+.step-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.step-body .muted {
+  font-size: 0.85rem;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .onboarding-steps li {
+    flex-wrap: wrap;
+  }
+
+  .onboarding-steps li .btn {
+    margin-left: 2.5rem;
+  }
+}

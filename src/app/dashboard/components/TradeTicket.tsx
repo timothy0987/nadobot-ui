@@ -149,7 +149,7 @@ export function TradeTicket({ account, network, sign, sender, product, bid, ask,
   }
 
   return (
-    <div className="glass panel">
+    <div className="glass panel" id="trade-now">
       <div className="panel-header">
         <div>
           <h3>Trade now</h3>

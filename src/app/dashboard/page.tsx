@@ -36,6 +36,7 @@ import { track } from '@/lib/analytics';
 import { QuickStrategies } from './components/QuickStrategies';
 import { TradeTicket } from './components/TradeTicket';
 import { PriceChart } from './components/PriceChart';
+import { GettingStarted } from './components/GettingStarted';
 import type { Preset } from '@/lib/presets';
 
 const DEFAULT_MARKET = 'BTC-PERP';
@@ -207,6 +208,19 @@ export default function Dashboard() {
               Your wallet is on a network Nado doesn't use. Pick Testnet or Mainnet above: orders must be signed on the network they trade on.
             </div>
           )}
+          <GettingStarted
+            storageKey={`nadobot:onboarding-hidden:${network.chainId}:${sender}`}
+            state={{
+              onSupportedChain,
+              isMainnet,
+              accountExists: onSupportedChain ? exists : false,
+              equity: account ? account.equity : exists === false ? 0 : null,
+              pushEnabled: push.enabled,
+              pushSupported: push.support !== 'unsupported',
+              hasTraded: walletFills === null ? (exists === false ? false : null) : walletFills.length > 0,
+            }}
+          />
+
           {onSupportedChain && exists === false && (
             <div className="notice error">
               This wallet has no Nado account on {network.label} yet. Deposit at least $5 USDT0{' '}

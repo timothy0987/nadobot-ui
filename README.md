@@ -18,6 +18,17 @@ All three live on Nado's servers, so the plan runs whether or not the dashboard 
 
 **Why not a shared bot key?** Nado's [linked signers](https://docs.nado.xyz/developer-resources/get-started/linked-signers) have full permissions, including withdrawals. A single bot key linked to many traders' accounts would let one server compromise drain every account. Trade plans avoid that entirely: nobody but the trader ever holds a key that controls their funds.
 
+## Getting started checklist
+
+A connected wallet that hasn't traded yet sees a short checklist at the top of the dashboard. Each step uses data the dashboard already loads:
+
+1. **Use a Nado network:** the wallet is on Ink Sepolia or Ink mainnet.
+2. **Fund your Nado account:** the account exists with at least $5 of value. Links to depositing on app.nado.xyz, or to the testnet faucet.
+3. **Turn on notifications:** optional, and skipped where the browser can't show push.
+4. **Place your first trade:** the wallet has any fill. Scrolls to *Trade now*.
+
+It hides itself once every required step is done, or when dismissed (remembered per network and wallet in the browser). The logic is in `src/lib/onboarding.ts`, tested in `tests/onboarding.test.ts`.
+
 ## Price chart
 
 The dashboard opens on a candlestick chart of the selected market, before any wallet is connected, so traders can read the market and act without leaving Nadobot.

@@ -24,7 +24,7 @@ export function PushSettings({ support, enabled, topics, busy, error, walletConn
   const nothingSelected = wanted.length === 0 || (wanted.length === 1 && wanted[0] === 'fills' && !walletConnected);
 
   return (
-    <div className="glass panel">
+    <div className="glass panel" id="push-settings">
       <div className="panel-header">
         <div>
           <h3>Push notifications</h3>
