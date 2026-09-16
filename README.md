@@ -18,6 +18,10 @@ All three live on Nado's servers, so the plan runs whether or not the dashboard 
 
 **Why not a shared bot key?** Nado's [linked signers](https://docs.nado.xyz/developer-resources/get-started/linked-signers) have full permissions, including withdrawals. A single bot key linked to many traders' accounts would let one server compromise drain every account. Trade plans avoid that entirely: nobody but the trader ever holds a key that controls their funds.
 
+## Trade now (market orders)
+
+The *Trade now* ticket buys or sells at the market. It sends an IOC order at the touch with a 1% slippage cap (a buy lifts the ask, a sell hits the bid), sized in USD, in the coin, or by risk. It has an optional stop-loss and take-profit and the same risk preview as the other tools. After signing, the dashboard reads the position back to find how much actually filled. It then places reduce-only exits sized to exactly that fill, so a partial fill gets exits for what was traded. If the IOC finds no liquidity, the trader is told nothing was traded. When the account already holds the opposite side, exits are switched off, since the order first reduces that position. Counted as the anonymous  event.
+
 ## Quick strategies
 
 One-tap presets at the top of the dashboard fill in the matching form for the selected market. Nothing is placed until the trader reviews the preview and risk checks and signs.

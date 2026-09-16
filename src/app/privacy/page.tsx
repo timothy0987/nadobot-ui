@@ -82,7 +82,7 @@ export default function Privacy() {
           </p>
           <ul>
             <li>
-              what happened: a wallet session started, a trade plan, ladder, TWAP or DCA was placed, a position was protected, closed or
+              what happened: a wallet session started, a market order, trade plan, ladder, TWAP or DCA was placed, a position was protected, closed or
               had an exit moved, a price alert or DCA reminder was set, or a PnL card was shared;
             </li>
             <li>which network it was on (mainnet or testnet);</li>

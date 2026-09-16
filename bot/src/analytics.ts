@@ -8,6 +8,7 @@ import { SUPPORTED_CHAIN_IDS } from './push/validate';
  */
 export const EVENT_NAMES = [
   'wallet_connected',
+  'market_order',
   'plan_created',
   'ladder_placed',
   'twap_started',

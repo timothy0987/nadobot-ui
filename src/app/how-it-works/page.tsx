@@ -14,6 +14,7 @@ const SECTIONS = [
   { id: 'offline', label: 'How orders run offline' },
   { id: 'signatures', label: 'What you sign' },
   { id: 'risk-checks', label: 'Risk checks & sizing' },
+  { id: 'trade-now', label: 'Trade now' },
   { id: 'trade-plans', label: 'Trade plans' },
   { id: 'ladders', label: 'Ladders & scaled take-profits' },
   { id: 'twap-dca', label: 'TWAP & DCA' },
@@ -200,6 +201,28 @@ export default function HowItWorks() {
               These are estimates using Nado&apos;s own margin rules. They assume only this market&apos;s price moves, judge margin at your
               order&apos;s fill price, and leave out fees and funding. Nado&apos;s live numbers always take priority.
             </div>
+          </section>
+
+          <section id="trade-now">
+            <h2>Trade now</h2>
+            <p className="doc-lead">Buy or sell at the market price, with a stop-loss and take-profit added once it fills.</p>
+            <ul>
+              <li>
+                <strong>Market order</strong>: fills straight away against the best price, and never more than 1% past it. If it
+                can&apos;t fill within that, it&apos;s cancelled and nothing is traded.
+              </li>
+              <li>
+                <strong>Size</strong> in USD, in the coin, or by risk (the most you&apos;d lose at the stop-loss).
+              </li>
+              <li>
+                <strong>Stop-loss and take-profit</strong> are optional. Once the order fills, Nadobot checks how much actually
+                filled and asks you to sign exits sized to exactly that. They can only reduce the position.
+              </li>
+              <li>
+                If you already hold a position the other way, the order reduces it first, so no exits are added. Manage it in{' '}
+                <em>Portfolio</em> instead.
+              </li>
+            </ul>
           </section>
 
           <section id="trade-plans">

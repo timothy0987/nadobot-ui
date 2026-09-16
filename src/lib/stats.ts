@@ -11,6 +11,7 @@ export interface StatsResponse {
 
 export const TOOL_LABELS: Record<EventName, string> = {
   wallet_connected: 'Wallet sessions',
+  market_order: 'Market orders',
   plan_created: 'Trade plans',
   ladder_placed: 'Ladders',
   twap_started: 'TWAP schedules',
@@ -24,7 +25,7 @@ export const TOOL_LABELS: Record<EventName, string> = {
 };
 
 /** Events that place orders on Nado, whose value is order flow through Nadobot. */
-const ORDER_EVENTS: EventName[] = ['plan_created', 'ladder_placed', 'twap_started', 'dca_started', 'position_closed'];
+const ORDER_EVENTS: EventName[] = ['market_order', 'plan_created', 'ladder_placed', 'twap_started', 'dca_started', 'position_closed'];
 
 /** Pure: headline numbers, tool breakdown (most used first) and the daily series for one network. */
 export function summarizeStats(data: StatsResponse, chainId: number) {

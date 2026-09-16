@@ -34,6 +34,7 @@ import { MainnetGate, NetworkSwitch, useDashboardNetwork } from './components/Ne
 import { MarketPicker, tradableMarkets } from './components/MarketPicker';
 import { track } from '@/lib/analytics';
 import { QuickStrategies } from './components/QuickStrategies';
+import { TradeTicket } from './components/TradeTicket';
 import type { Preset } from '@/lib/presets';
 
 const DEFAULT_MARKET = 'BTC-PERP';
@@ -253,6 +254,20 @@ export default function Dashboard() {
 
           {product && onSupportedChain && (
             <MainnetGate network={network}>
+              <TradeTicket
+                key={`ticket-${product.product_id}`}
+                account={account}
+                network={network}
+                sign={sign}
+                sender={sender}
+                product={product}
+                bid={quote?.bid ?? null}
+                ask={quote?.ask ?? null}
+                onTraded={() => {
+                  setOrdersRefreshKey((k) => k + 1);
+                  refresh();
+                }}
+              />
               <QuickStrategies symbol={product.symbol} onPick={(p) => setPreset({ preset: p, nonce: Date.now() })} />
               <TradePlanForm
                 key={`plan-${product.product_id}`}

@@ -1536,3 +1536,127 @@ export async function replaceTriggerOrder(
   }
   return { digest, oldCancelled: true };
 }
+
+/* ---------------------------------- market orders ---------------------------------- */
+
+/** How far past the touch a market order may fill. It is IOC, so this caps the price rather than setting it. */
+export const MARKET_SLIPPAGE_PERCENT = 1;
+
+export interface MarketOrderPlan {
+  /** Signed: positive buys, negative sells. */
+  amount: bigint;
+  limitPriceX18: bigint;
+  /** Price the order is expected to fill near (the touch), used for value and exits. */
+  expectedPrice: number;
+  notional: number;
+  /** Trigger prices for optional exits, from the expected fill price. */
+  stopX18: bigint | null;
+  takeProfitX18: bigint | null;
+  errors: string[];
+}
+
+/**
+ * Pure: a market order as an immediate-or-cancel limit at the touch plus a slippage cap: a buy lifts the ask, a sell
+ * hits the bid, and nothing fills worse than the cap.
+ */
+export function planMarketOrder(p: {
+  side: 'long' | 'short';
+  size: number;
+  bid: number | null;
+  ask: number | null;
+  stopLossPercent?: number | null;
+  takeProfitPercent?: number | null;
+  slippagePercent?: number;
+  priceIncrementX18: bigint;
+  sizeIncrementX18: bigint;
+  minOrderValueX18: bigint;
+}): MarketOrderPlan {
+  const errors: string[] = [];
+  const long = p.side === 'long';
+  const touch = long ? p.ask : p.bid;
+  const slippage = (p.slippagePercent ?? MARKET_SLIPPAGE_PERCENT) / 100;
+  const lots = roundToIncrement(toX18(Math.max(p.size || 0, 0)), p.sizeIncrementX18, 'down');
+  const amount = long ? lots : -lots;
+
+  if (!touch) errors.push('No market price available for this market right now.');
+  if (lots === 0n) errors.push("Size is below this market's minimum lot size.");
+
+  const limitPriceX18 = touch ? roundToIncrement(toX18(touch * (long ? 1 + slippage : 1 - slippage)), p.priceIncrementX18, long ? 'up' : 'down') : 0n;
+  const notional = touch ? fromX18(lots) * touch : 0;
+  if (touch && lots > 0n && toX18(notional) < p.minOrderValueX18) {
+    errors.push(`Order value ${notional.toLocaleString('en-US', { style: 'currency', currency: 'USD' })} is below this market's $${fromX18(p.minOrderValueX18)} minimum.`);
+  }
+
+  const tick = (v: number) => roundToIncrement(toX18(v), p.priceIncrementX18, 'nearest');
+  const sl = p.stopLossPercent && p.stopLossPercent > 0 ? p.stopLossPercent : null;
+  const tp = p.takeProfitPercent && p.takeProfitPercent > 0 ? p.takeProfitPercent : null;
+  if (sl !== null && sl >= 100) errors.push('Stop-loss must be below 100%.');
+  const stopX18 = touch && sl !== null ? tick(touch * (long ? 1 - sl / 100 : 1 + sl / 100)) : null;
+  const takeProfitX18 = touch && tp !== null ? tick(touch * (long ? 1 + tp / 100 : 1 - tp / 100)) : null;
+
+  return { amount, limitPriceX18, expectedPrice: touch ?? 0, notional, stopX18, takeProfitX18, errors };
+}
+
+/** Places the market order: one signature, immediate-or-cancel, not reduce-only (it opens or adds to a position). */
+export async function placeMarketOrder(network: NadoNetwork, sign: SignTypedDataAsync, p: { productId: number; sender: `0x${string}`; plan: MarketOrderPlan }) {
+  if (p.plan.errors.length) throw new Error(p.plan.errors[0]);
+  return placeOrder(network, sign, {
+    productId: p.productId,
+    sender: p.sender,
+    priceX18: p.plan.limitPriceX18,
+    amount: p.plan.amount,
+    orderType: OrderType.IOC,
+    expiresInSeconds: 60,
+  });
+}
+
+/**
+ * Pure: how much of a market order filled, from the position before and after, never more than was ordered. Protection
+ * is sized to this, so a partial fill gets exits for exactly what was bought or sold.
+ */
+export function filledAmount(before: bigint, after: bigint, ordered: bigint): bigint {
+  const delta = after - before;
+  if (ordered > 0n) return delta > 0n ? (delta > ordered ? ordered : delta) : 0n;
+  return delta < 0n ? (delta < ordered ? ordered : delta) : 0n;
+}
+
+/**
+ * Attaches a stop-loss and/or take-profit to what a market order filled: reduce-only triggers sized to the fill, the
+ * same orders "Protect position" places. `filled` is signed like the order (positive for a buy).
+ */
+export async function protectFill(
+  network: NadoNetwork,
+  sign: SignTypedDataAsync,
+  p: { productId: number; sender: `0x${string}`; filled: bigint; plan: MarketOrderPlan; priceIncrementX18: bigint }
+) {
+  const long = p.filled > 0n;
+  const worse = long ? 1 - EXIT_SLIPPAGE : 1 + EXIT_SLIPPAGE;
+  const exitMode: RoundMode = long ? 'down' : 'up';
+  const limit = (triggerX18: bigint) => roundToIncrement(toX18(fromX18(triggerX18) * worse), p.priceIncrementX18, exitMode);
+  const placed: string[] = [];
+  if (p.plan.stopX18 !== null) {
+    const at = p.plan.stopX18.toString();
+    placed.push(
+      await placeTriggerOrder(network, sign, {
+        productId: p.productId,
+        sender: p.sender,
+        priceX18: limit(p.plan.stopX18),
+        amount: -p.filled,
+        priceRequirement: long ? { last_price_below: at } : { last_price_above: at },
+      })
+    );
+  }
+  if (p.plan.takeProfitX18 !== null) {
+    const at = p.plan.takeProfitX18.toString();
+    placed.push(
+      await placeTriggerOrder(network, sign, {
+        productId: p.productId,
+        sender: p.sender,
+        priceX18: limit(p.plan.takeProfitX18),
+        amount: -p.filled,
+        priceRequirement: long ? { last_price_above: at } : { last_price_below: at },
+      })
+    );
+  }
+  return placed;
+}

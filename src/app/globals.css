@@ -1259,3 +1259,50 @@ button:disabled {
   font-weight: 600;
   color: var(--accent-color);
 }
+
+/* Trade now ticket */
+.segment.active.buy {
+  background: rgba(16, 185, 129, 0.18);
+  color: var(--success);
+}
+
+.segment.active.sell {
+  background: rgba(239, 68, 68, 0.18);
+  color: var(--danger);
+}
+
+.btn-buy,
+.btn-sell {
+  color: #fff;
+  border: none;
+  font-weight: 700;
+}
+
+.btn-buy {
+  background: var(--success);
+}
+
+.btn-sell {
+  background: var(--danger);
+}
+
+.btn-buy:hover:not(:disabled),
+.btn-sell:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.field span input[type='checkbox'] {
+  margin-right: 0.3rem;
+  vertical-align: middle;
+}
+
+.field > span.check-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.field > span.check-label input[type='checkbox'] {
+  margin: 0;
+  width: auto;
+}
