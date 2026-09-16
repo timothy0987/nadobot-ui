@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   assessTradeRisk,
   cancelLadder,
@@ -22,8 +22,11 @@ import {
 } from '@/lib/nado';
 import { track } from '@/lib/analytics';
 import { RiskPreview } from './RiskPreview';
+import { restingPrice, type Preset } from '@/lib/presets';
 
 interface Props {
+  /** A quick strategy to fill the form with; ignored unless it is for this tool. */
+  preset?: { preset: Preset; nonce: number } | null;
   account: AccountRisk | null;
   network: NadoNetwork;
   sign: SignTypedDataAsync;
@@ -94,7 +97,7 @@ const DEFAULT_TAKE_PROFITS = [
  * Laddered entry: several limit orders spread across a price range, so the trader builds a position as price moves
  * instead of betting on one level. Scaled take-profits close it in parts, and one stop-loss protects the whole ladder.
  */
-export function LadderForm({ account, network, sign, sender, product, bid, ask, onCreated }: Props) {
+export function LadderForm({ account, network, sign, sender, product, bid, ask, onCreated, preset }: Props) {
   const [side, setSide] = useState<'long' | 'short'>('long');
   const [unit, setUnit] = useState<'usd' | 'base' | 'risk'>('usd');
   const [amount, setAmount] = useState('1000');
@@ -107,6 +110,26 @@ export function LadderForm({ account, network, sign, sender, product, bid, ask, 
   const [days, setDays] = useState('7');
   const [progress, setProgress] = useState<{ signed: number; total: number } | null>(null);
   const [message, setMessage] = useState<{ ok: boolean; text: string; rollback?: SavedLadder } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const appliedPreset = useRef<number | null>(null);
+
+  useEffect(() => {
+    const p = preset?.preset;
+    if (!p || p.tool !== 'ladder' || !bid || !ask || appliedPreset.current === preset!.nonce) return;
+    appliedPreset.current = preset!.nonce;
+    const tick = product.price_increment_x18;
+    setSide(p.side);
+    setUnit('usd');
+    setAmount(String(p.totalUsd));
+    setRungs(String(p.rungs));
+    setNearPrice(priceInputValue(restingPrice(p.side, bid, ask, p.nearOffsetPercent), tick));
+    setFarPrice(priceInputValue(restingPrice(p.side, bid, ask, p.farOffsetPercent), tick));
+    setDistribution(p.distribution);
+    setStopLoss(String(p.stopLossPercent));
+    setTakeProfits(p.takeProfits.map((t) => ({ percent: String(t.percent), share: String(t.share) })));
+    setMessage({ ok: true, text: `Filled in from "${p.title}". Check every order and the risk below, adjust anything you like, then place the ladder.` });
+    panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [preset, bid, ask, product.price_increment_x18]);
   const [saved, setSaved] = useState<SavedLadder[]>([]);
 
   useEffect(() => setSaved(loadLadders()), []);
@@ -227,7 +250,7 @@ export function LadderForm({ account, network, sign, sender, product, bid, ask, 
   const mine = saved.filter((l) => l.chainId === network.chainId && l.sender === sender && l.productId === product.product_id);
 
   return (
-    <div className="glass panel">
+    <div className="glass panel" ref={panelRef}>
       <div className="panel-header">
         <div>
           <h3>Ladder &amp; scaled take-profits</h3>

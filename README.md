@@ -18,6 +18,18 @@ All three live on Nado's servers, so the plan runs whether or not the dashboard 
 
 **Why not a shared bot key?** Nado's [linked signers](https://docs.nado.xyz/developer-resources/get-started/linked-signers) have full permissions, including withdrawals. A single bot key linked to many traders' accounts would let one server compromise drain every account. Trade plans avoid that entirely: nobody but the trader ever holds a key that controls their funds.
 
+## Quick strategies
+
+One-tap presets at the top of the dashboard fill in the matching form for the selected market. Nothing is placed until the trader reviews the preview and risk checks and signs.
+
+- **Buy the dip**: a weighted long ladder 1–6% below the price, 5% stop, targets at 4/8/12%.
+- **Risk $25, aim for 2×**: a trade plan 1% below the price, sized by risk, 3% stop, 6% target.
+- **Sell the rally**: a short ladder 1–5% above the price, 5% stop, targets at 4/8%.
+- **Daily DCA**: $1,000 over 24 hours every 4 hours, with the renewal reminder on.
+- **Enter quietly over an hour**: a $2,000 TWAP in 10 slices over 60 minutes.
+
+Presets are defined in `src/lib/presets.ts` as offsets from the market, so they work on any market. `tests/presets.test.ts` runs every preset through the real planners on BTC, ETH and TON parameters recorded from Nado, so a preset can never fill in something the dashboard or Nado would reject.
+
 ## Markets, risk checks and sizing by risk
 
 - **Every live Nado perp market**, from a searchable picker that remembers your choice (BTC, ETH and SOL first). Prices display and round at each market's own tick, down to $0.000001.

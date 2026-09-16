@@ -33,6 +33,8 @@ import { PriceAlerts } from './components/PriceAlerts';
 import { MainnetGate, NetworkSwitch, useDashboardNetwork } from './components/NetworkSwitch';
 import { MarketPicker, tradableMarkets } from './components/MarketPicker';
 import { track } from '@/lib/analytics';
+import { QuickStrategies } from './components/QuickStrategies';
+import type { Preset } from '@/lib/presets';
 
 const DEFAULT_MARKET = 'BTC-PERP';
 const MARKET_KEY = 'nadobot:market';
@@ -53,6 +55,7 @@ export default function Dashboard() {
   const [position, setPosition] = useState<PerpPosition | null>(null);
   const [quote, setQuote] = useState<{ bid: number; ask: number } | null>(null);
   const [ordersRefreshKey, setOrdersRefreshKey] = useState(0);
+  const [preset, setPreset] = useState<{ preset: Preset; nonce: number } | null>(null);
 
   const sender = useMemo(() => (address ? subaccountToBytes32(address, 'default') : null), [address]);
   const markets = useMemo(() => tradableMarkets(symbols), [symbols]);
@@ -250,8 +253,10 @@ export default function Dashboard() {
 
           {product && onSupportedChain && (
             <MainnetGate network={network}>
+              <QuickStrategies symbol={product.symbol} onPick={(p) => setPreset({ preset: p, nonce: Date.now() })} />
               <TradePlanForm
                 key={`plan-${product.product_id}`}
+                preset={preset}
                 account={account}
                 network={network}
                 sign={sign}
@@ -266,6 +271,7 @@ export default function Dashboard() {
               />
               <LadderForm
                 key={`ladder-${product.product_id}`}
+                preset={preset}
                 account={account}
                 network={network}
                 sign={sign}
@@ -280,6 +286,7 @@ export default function Dashboard() {
               />
               <TwapForm
                 key={`twap-${product.product_id}`}
+                preset={preset}
                 account={account}
                 network={network}
                 sign={sign}

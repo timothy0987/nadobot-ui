@@ -106,6 +106,11 @@ export default function HowItWorks() {
                 real funds.
               </li>
               <li>
+                <strong>Not sure where to start?</strong> Tap one of the <em>Quick strategies</em> at the top of the dashboard, such as
+                &ldquo;Buy the dip&rdquo; or &ldquo;Daily DCA&rdquo;. It fills in the right form for your market with sensible settings
+                you can adjust.
+              </li>
+              <li>
                 <strong>Review and sign.</strong> Every tool shows exactly what will be placed and checks it against Nado&apos;s rules before
                 your wallet opens.
               </li>

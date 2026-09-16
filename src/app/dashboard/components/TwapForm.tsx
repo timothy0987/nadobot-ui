@@ -21,8 +21,11 @@ import { track } from '@/lib/analytics';
 import { RiskPreview } from './RiskPreview';
 import { postBotJson } from '../notifications';
 import { reminderFor, renewalDraft, type SavedSchedule } from '@/lib/renewal';
+import type { Preset } from '@/lib/presets';
 
 interface Props {
+  /** A quick strategy to fill the form with; ignored unless it is for this tool. */
+  preset?: { preset: Preset; nonce: number } | null;
   account: AccountRisk | null;
   network: NadoNetwork;
   sign: SignTypedDataAsync;
@@ -70,7 +73,7 @@ function save(list: SavedTwap[]) {
  * TWAP: split a large order into timed slices to reduce price impact. DCA: the same Nado primitive used to buy (or
  * sell) steadily over hours. One signature; Nado executes every slice on its own servers.
  */
-export function TwapForm({ account, network, sign, sender, product, bid, ask, pushEndpoint, renewDigest }: Props) {
+export function TwapForm({ account, network, sign, sender, product, bid, ask, pushEndpoint, renewDigest, preset }: Props) {
   const [mode, setMode] = useState<Mode>('twap');
   const [side, setSide] = useState<'buy' | 'sell'>('buy');
   const [unit, setUnit] = useState<'usd' | 'base'>('usd');
@@ -86,6 +89,29 @@ export function TwapForm({ account, network, sign, sender, product, bid, ask, pu
   const [saved, setSaved] = useState<SavedTwap[]>([]);
   const [remind, setRemind] = useState(true);
   const panelRef = useRef<HTMLDivElement>(null);
+  const appliedPreset = useRef<number | null>(null);
+
+  useEffect(() => {
+    const p = preset?.preset;
+    if (!p || p.tool !== 'twap' || appliedPreset.current === preset!.nonce) return;
+    appliedPreset.current = preset!.nonce;
+    setMode(p.mode);
+    setSide(p.side);
+    setUnit('usd');
+    setAmount(String(p.totalUsd));
+    setSlippage(String(p.slippagePercent));
+    setLimitPrice('');
+    if (p.mode === 'twap') {
+      setExecutions(String(p.executions));
+      setTwapMinutes(String(p.minutes));
+    } else {
+      setDcaInterval(p.intervalSeconds!);
+      setDcaHours(String(p.hours));
+      setRemind(true);
+    }
+    setMessage({ ok: true, text: `Filled in from "${p.title}". Check the schedule and limits, adjust anything you like, then start it.` });
+    panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [preset]);
 
   // Opened from a "DCA finished" notification: pre-fill the same schedule so renewing is one review and one signature.
   useEffect(() => {

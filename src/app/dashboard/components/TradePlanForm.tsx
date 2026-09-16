@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   assessTradeRisk,
   createTradePlan,
@@ -16,8 +16,11 @@ import {
 } from '@/lib/nado';
 import { track } from '@/lib/analytics';
 import { RiskPreview } from './RiskPreview';
+import { restingPrice, type Preset } from '@/lib/presets';
 
 interface Props {
+  /** A quick strategy to fill the form with; ignored unless it is for this tool. */
+  preset?: { preset: Preset; nonce: number } | null;
   account: AccountRisk | null;
   network: NadoNetwork;
   sign: SignTypedDataAsync;
@@ -32,7 +35,7 @@ type SizeMode = 'usd' | 'base' | 'risk';
 
 const usd = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 
-export function TradePlanForm({ account, network, sign, sender, product, bid, ask, onCreated }: Props) {
+export function TradePlanForm({ account, network, sign, sender, product, bid, ask, onCreated, preset }: Props) {
   const [side, setSide] = useState<'long' | 'short'>('long');
   const [sizeMode, setSizeMode] = useState<SizeMode>('usd');
   const [sizeValue, setSizeValue] = useState('500');
@@ -42,6 +45,23 @@ export function TradePlanForm({ account, network, sign, sender, product, bid, as
   const [days, setDays] = useState('7');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const appliedPreset = useRef<number | null>(null);
+
+  // Fill in a quick strategy once the market price is known, then bring the form into view for review.
+  useEffect(() => {
+    const p = preset?.preset;
+    if (!p || p.tool !== 'plan' || !bid || !ask || appliedPreset.current === preset!.nonce) return;
+    appliedPreset.current = preset!.nonce;
+    setSide(p.side);
+    setSizeMode('risk');
+    setSizeValue(String(p.riskUsd));
+    setEntry(priceInputValue(restingPrice(p.side, bid, ask, p.entryOffsetPercent), product.price_increment_x18));
+    setStopLoss(String(p.stopLossPercent));
+    setTakeProfit(String(p.takeProfitPercent));
+    setResult({ ok: true, text: `Filled in from "${p.title}". Check the preview and risk, adjust anything you like, then create the plan.` });
+    panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [preset, bid, ask, product.price_increment_x18]);
 
   const isLong = side === 'long';
   const base = product.symbol.replace('-PERP', '');
@@ -126,7 +146,7 @@ export function TradePlanForm({ account, network, sign, sender, product, bid, as
   }
 
   return (
-    <div className="glass panel">
+    <div className="glass panel" ref={panelRef}>
       <div className="panel-header">
         <div>
           <h3>New trade plan</h3>
