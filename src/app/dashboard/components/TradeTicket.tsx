@@ -9,13 +9,16 @@ import {
   formatPrice,
   fromX18,
   MARKET_SLIPPAGE_PERCENT,
+  maxTradeSize,
   placeLimitOrder,
   placeMarketOrder,
   planLimitOrder,
   planMarketOrder,
   priceInputValue,
   protectFill,
+  roundToIncrement,
   sizeForRisk,
+  toX18,
   type AccountRisk,
   type NadoNetwork,
   type ProductSymbol,
@@ -72,6 +75,18 @@ export function TradeTicket({ account, network, sign, sender, product, bid, ask,
   // Holding the other way, this order first reduces that position, so exits for a new position would be misleading.
   const existing = account?.perps[product.product_id]?.amount ?? 0;
   const opposite = (long && existing < 0) || (!long && existing > 0);
+
+  // The most this account's margin can open on this side at the fill price, counting an opposite position closing first,
+  // and keeping any stop-loss ahead of liquidation so the suggested size passes the risk checks.
+  const plannedStop = stopPercent && !opposite ? refPrice * (long ? 1 - stopPercent / 100 : 1 + stopPercent / 100) : undefined;
+  const maxSize =
+    account && refPrice > 0
+      ? maxTradeSize(account, { productId: product.product_id, side, price: refPrice, sizeIncrementX18: product.size_increment, stopPrice: plannedStop })
+      : 0;
+  const quickSize = (fraction: number) => {
+    setSizeMode('base');
+    setSizeValue(String(fromX18(roundToIncrement(toX18(maxSize * fraction), BigInt(product.size_increment), 'down'))));
+  };
 
   const size = useMemo(() => {
     const value = Number(sizeValue);
@@ -275,6 +290,22 @@ export function TradeTicket({ account, network, sign, sender, product, bid, ask,
           </label>
         )}
       </div>
+
+      {account && (
+        <div className="quick-size">
+          <span className="muted">
+            {maxSize > 0
+              ? `Your margin allows up to ${maxSize} ${base} (≈ ${usd(maxSize * refPrice)}) ${long ? 'long' : 'short'}${plannedStop ? ' with this stop-loss' : ''}`
+              : 'No margin available for this side. Deposit on Nado to trade.'}
+          </span>
+          {maxSize > 0 &&
+            [0.25, 0.5, 0.75, 1].map((f) => (
+              <button key={f} type="button" className="btn btn-sm btn-secondary" onClick={() => quickSize(f)}>
+                {f === 1 ? 'Max' : `${f * 100}%`}
+              </button>
+            ))}
+        </div>
+      )}
 
       {isLimit && (
         <label className="remind-toggle" style={{ marginTop: '0.75rem' }}>

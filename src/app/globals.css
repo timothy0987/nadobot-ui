@@ -1505,3 +1505,15 @@ button:disabled {
   flex-wrap: wrap;
   gap: 0.5rem;
 }
+
+.quick-size {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.quick-size .muted {
+  margin-right: auto;
+}

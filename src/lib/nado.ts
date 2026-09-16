@@ -1373,6 +1373,51 @@ export function sizeForRisk(riskUsd: number, entry: number, stop: number, sizeIn
   return fromX18(roundToIncrement(toX18(riskUsd / perUnit), BigInt(sizeIncrementX18), 'down'));
 }
 
+/** Share of available margin left unused by "Max", as a cushion for fees and the price moving before the fill. */
+export const MAX_SIZE_MARGIN_BUFFER = 0.05;
+/** How far past the stop-loss, as a share of the price, "Max" keeps the liquidation price: room for the exit's slippage. */
+export const MAX_SIZE_LIQUIDATION_CUSHION = 0.01;
+
+/**
+ * Pure: the largest order on this side, in lots, that leaves initial margin at or above the buffer once fully filled at
+ * `price`, and, with a stop-loss, keeps liquidation at least MAX_SIZE_LIQUIDATION_CUSHION past the stop. Counts an
+ * opposite position first being reduced, exactly as projectRisk does. Both limits only tighten as size grows, so a binary
+ * search over lots finds the exact boundary.
+ */
+export function maxTradeSize(
+  account: AccountRisk,
+  p: { productId: number; side: 'long' | 'short'; price: number; sizeIncrementX18: bigint | string; stopPrice?: number; buffer?: number }
+): number {
+  const w = account.weights[p.productId];
+  const lot = fromX18(BigInt(p.sizeIncrementX18));
+  if (!w || !(p.price > 0) || !(lot > 0)) return 0;
+  const atFill = repriceAccount(account, p.productId, p.price);
+  const reserve = Math.max(atFill.availableMargin, 0) * (p.buffer ?? MAX_SIZE_MARGIN_BUFFER);
+  const sign = p.side === 'long' ? 1 : -1;
+  // Checking against a stop moved further out by the cushion keeps the real stop that far from liquidation.
+  const guardStop = p.stopPrice ? p.stopPrice - sign * p.price * MAX_SIZE_LIQUIDATION_CUSHION : undefined;
+  const fits = (lots: number) => {
+    const fills = [{ productId: p.productId, amount: sign * lots * lot, price: p.price }];
+    if (projectRisk(atFill, fills).availableMargin < reserve) return false;
+    return !guardStop || assessTradeRisk(account, { productId: p.productId, fills, stopPrice: guardStop }).errors.length === 0;
+  };
+
+  if (!fits(1)) return 0;
+  let lo = 1;
+  let hi = 2;
+  while (fits(hi)) {
+    lo = hi;
+    hi *= 2;
+    if (hi > 2 ** 52) return 0; // no margin requirement at all: something is wrong with the weights
+  }
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (fits(mid)) lo = mid;
+    else hi = mid;
+  }
+  return fromX18(BigInt(lo) * BigInt(p.sizeIncrementX18));
+}
+
 /* ---------------------------------- closing a position ---------------------------------- */
 
 /** How far past the touch a close is allowed to fill. It is an IOC order, so this is a cap, not a target. */

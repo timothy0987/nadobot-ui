@@ -218,7 +218,8 @@ export default function HowItWorks() {
                 Its stop-loss and take-profit are placed with it and stay dormant until it fills.
               </li>
               <li>
-                <strong>Size</strong> in USD, in the coin, or by risk (the most you&apos;d lose at the stop-loss).
+                <strong>Size</strong> in USD, in the coin, or by risk (the most you&apos;d lose at the stop-loss). The 25%, 50%, 75% and Max
+                buttons size the order from how much your margin allows, keeping a small cushion for fees and price moves. With a stop-loss set, Max also keeps the liquidation price at least 1% beyond your stop, so the stop has room to fill first.
               </li>
               <li>
                 <strong>Stop-loss and take-profit</strong> are optional. For a market order, once it fills, Nadobot checks how much actually
