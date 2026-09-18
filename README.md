@@ -160,6 +160,10 @@ To show which tools traders use and how much order value flows through Nadobot (
 - `GET /stats?days=30` returns the totals, and the public **/stats** page shows order value placed, orders and schedules, wallet sessions, shares, a daily chart and a per-tool table.
 - Value is order size at placement, not what filled.
 
+## Logo and icons
+
+The mark is an N drawn as two candlesticks, the second higher than the first, on the blue-to-green brand gradient. Its geometry lives in `src/lib/logo.ts` and is shared by the header (`src/app/components/Logo.tsx`), the PnL share card and the icon generator. After changing it, run `npm run icons` to regenerate the favicon (`src/app/favicon.ico`, `src/app/icon.svg`), the Home Screen icon (`src/app/apple-icon.png`), the install and notification icons in `public/icons/`, and the link preview image (`src/app/opengraph-image.png`, `twitter-image.png`).
+
 ## Tests
 
 ```bash

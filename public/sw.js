@@ -21,8 +21,8 @@ self.addEventListener('push', (event) => {
       await self.registration.showNotification(data.title || 'Nadobot', {
         body: data.body || '',
         tag: data.tag,
-        icon: '/favicon.ico',
-        badge: '/favicon.ico',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/badge-96.png',
         data: { url: data.url || '/dashboard' },
       });
     })()

@@ -1,3 +1,4 @@
+import { drawLogo } from './logo';
 import { formatPrice, positionNetPnl, type PositionRecord } from './nado';
 
 export interface PnlCardData {
@@ -64,8 +65,9 @@ export function drawPnlCard(ctx: CanvasRenderingContext2D, d: PnlCardData, opts:
   ctx.textBaseline = 'alphabetic';
   ctx.fillStyle = '#ffffff';
   ctx.font = font(800, 40);
-  ctx.fillText('Nadobot', 72, 100);
-  const brandWidth = ctx.measureText('Nadobot').width;
+  drawLogo(ctx, 72, 60, 56);
+  ctx.fillText('Nadobot', 144, 100);
+  const brandWidth = ctx.measureText('Nadobot').width + 72;
   ctx.font = font(600, 22);
   const pill = 'Built on Nado';
   const pillWidth = ctx.measureText(pill).width + 28;

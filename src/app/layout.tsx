@@ -1,8 +1,10 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { Providers } from './Providers'
+import { Logo } from './components/Logo'
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://nadobot-ui.vercel.app'),
   title: 'Nadobot · Independent trade automation for Nado',
   description:
     'Nadobot is an independent tool for trading on Nado. Not affiliated with or endorsed by Nado. It never asks for token approvals or transfers.',
@@ -19,6 +21,7 @@ export default function RootLayout({
         <Providers>
           <nav className="container navbar">
             <a href="/" className="logo">
+              <Logo size={34} />
               Nadobot
               <span className="pill">Built on Nado</span>
             </a>
