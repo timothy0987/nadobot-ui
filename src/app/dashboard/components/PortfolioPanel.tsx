@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   BUILDER_ID,
   buildOpenPositions,
+  closeAllPositions,
   closePosition,
   CLOSE_SLIPPAGE_PERCENT,
   fetchMarketPrice,
@@ -17,8 +18,10 @@ import {
   liquidationPrice,
   parseAccountRisk,
   planClose,
+  planCloseAll,
   positionNetPnl,
   summarizeFills,
+  type CloseAllEntry,
   type Match,
   type NadoNetwork,
   type OpenPositionView,
@@ -83,6 +86,11 @@ export function PortfolioPanel({ network, sign, sender, symbols, onClosed }: Pro
   const [quote, setQuote] = useState<{ bid: number; ask: number } | null>(null);
   const [closing, setClosing] = useState(false);
   const [closeResult, setCloseResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const [closeAllPending, setCloseAllPending] = useState<CloseAllEntry[] | null>(null);
+  const [closeAllLoading, setCloseAllLoading] = useState(false);
+  const [closingAll, setClosingAll] = useState(false);
+  const [closeAllProgress, setCloseAllProgress] = useState<{ done: number; total: number } | null>(null);
+  const [closeAllResults, setCloseAllResults] = useState<{ productId: number; symbol: string; ok: boolean; error?: string }[] | null>(null);
   const [sharing, setSharing] = useState<PositionRecord | null>(null);
 
   const bySymbolId = Object.fromEntries(Object.values(symbols).map((s) => [s.product_id, s]));
@@ -100,6 +108,8 @@ export function PortfolioPanel({ network, sign, sender, symbols, onClosed }: Pro
     setPending(null);
     setCloseResult(null);
     setSharing(null);
+    setCloseAllPending(null);
+    setCloseAllResults(null);
   }, [network, sender]);
 
   const loadOpen = useCallback(async () => {
@@ -181,6 +191,50 @@ export function PortfolioPanel({ network, sign, sender, symbols, onClosed }: Pro
     }
   }
 
+  /** Fetches a live quote for every open position, then previews closing all of them at once. */
+  async function askToCloseAll() {
+    if (!open || open.length === 0) return;
+    setCloseAllResults(null);
+    setCloseAllLoading(true);
+    try {
+      const quotePairs = await Promise.all(
+        open.map(async (p) => [p.productId, await fetchMarketPrice(network, p.productId)] as const)
+      );
+      const quotes = Object.fromEntries(quotePairs);
+      setCloseAllPending(planCloseAll(open.map((p) => ({ productId: p.productId, symbol: name(p.productId), amountX18: p.amountX18 })), quotes, bySymbolId));
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setCloseAllLoading(false);
+    }
+  }
+
+  /** Closes every previewed position one signature at a time, reporting what happened to each. */
+  async function confirmCloseAll() {
+    if (!closeAllPending) return;
+    setClosingAll(true);
+    setCloseAllProgress({ done: 0, total: closeAllPending.length });
+    try {
+      const results = await closeAllPositions(network, sign, sender, closeAllPending, (done, total) => setCloseAllProgress({ done, total }));
+      for (const r of results) {
+        if (r.ok) {
+          const entry = closeAllPending.find((e) => e.productId === r.productId);
+          if (entry) track('position_closed', network.chainId, entry.plan.notional);
+        }
+      }
+      setCloseAllResults(results);
+      setCloseAllPending(null);
+      setTimeout(() => {
+        loadOpen();
+        loadActivity();
+        onClosed();
+      }, 2500);
+    } finally {
+      setClosingAll(false);
+      setCloseAllProgress(null);
+    }
+  }
+
   async function loadMore() {
     if (!history?.nextIdx) return;
     setLoadingMore(true);
@@ -255,16 +309,83 @@ export function PortfolioPanel({ network, sign, sender, symbols, onClosed }: Pro
       {summary && <ActivityChart buckets={summary.buckets} bucketSeconds={bucket} label={label} />}
       {rangeTruncated && <p className="muted">Showing your most recent 2,000 fills; older fills in this range aren&apos;t included.</p>}
 
-      <div className="segmented" role="tablist" aria-label="Positions" style={{ marginTop: '1.5rem' }}>
-        <button role="tab" aria-selected={tab === 'open'} className={`segment ${tab === 'open' ? 'active' : ''}`} onClick={() => setTab('open')}>
-          Open positions{open ? ` (${open.length})` : ''}
-        </button>
-        <button role="tab" aria-selected={tab === 'history'} className={`segment ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>
-          History
-        </button>
+      <div className="panel-header" style={{ marginTop: '1.5rem', marginBottom: 0 }}>
+        <div className="segmented" role="tablist" aria-label="Positions">
+          <button role="tab" aria-selected={tab === 'open'} className={`segment ${tab === 'open' ? 'active' : ''}`} onClick={() => setTab('open')}>
+            Open positions{open ? ` (${open.length})` : ''}
+          </button>
+          <button role="tab" aria-selected={tab === 'history'} className={`segment ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>
+            History
+          </button>
+        </div>
+        {tab === 'open' && open && open.length > 1 && (
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={askToCloseAll}
+            disabled={closing || closingAll || closeAllLoading || closeAllPending !== null}
+            title="Close every open position at market"
+          >
+            {closeAllLoading ? 'Checking prices…' : `Close all (${open.length})`}
+          </button>
+        )}
       </div>
 
       {closeResult && <div className={`notice ${closeResult.ok ? 'success' : 'error'}`}>{closeResult.text}</div>}
+      {closeAllResults &&
+        (() => {
+          const ok = closeAllResults.filter((r) => r.ok);
+          const failed = closeAllResults.filter((r) => !r.ok);
+          return (
+            <div className={`notice ${failed.length === 0 ? 'success' : 'error'}`}>
+              Closed {ok.length} of {closeAllResults.length} position{closeAllResults.length === 1 ? '' : 's'}.
+              {failed.length > 0 && (
+                <ul style={{ margin: '0.4rem 0 0 1.1rem' }}>
+                  {failed.map((r) => (
+                    <li key={r.productId}>
+                      {r.symbol}: {r.error}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })()}
+      {closeAllPending &&
+        (() => {
+          const closeable = closeAllPending.filter((e) => e.plan.errors.length === 0);
+          const total = closeable.reduce((sum, e) => sum + e.plan.notional, 0);
+          return (
+            <div className="notice close-confirm">
+              <p>
+                <strong>Close {closeable.length} position{closeable.length === 1 ? '' : 's'}</strong> at market, about {usd(total)} total.
+                {closingAll && closeAllProgress ? ` Closing ${closeAllProgress.done} of ${closeAllProgress.total}…` : ''}
+              </p>
+              <div className="close-all-list">
+                {closeAllPending.map((e) => (
+                  <div key={e.productId} className="close-all-row">
+                    <span>{e.symbol}</span>
+                    {e.plan.errors.length ? (
+                      <span style={{ color: 'var(--danger)' }}>{e.plan.errors[0]}</span>
+                    ) : (
+                      <span className="muted">
+                        {e.plan.amount < 0n ? 'Sell' : 'Buy'} {Math.abs(fromX18(e.plan.amount))} {e.symbol.replace('-PERP', '')} ≈ {usd(e.plan.notional)}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <p className="muted">Each closing order fills straight away or is cancelled; it can only reduce a position, never flip it. One signature per position.</p>
+              <div className="form-row">
+                <button className="btn btn-primary btn-sm" disabled={closingAll || closeable.length === 0} onClick={confirmCloseAll}>
+                  {closingAll ? 'Confirm each in your wallet…' : `Close ${closeable.length} now`}
+                </button>
+                <button className="btn btn-secondary btn-sm" disabled={closingAll} onClick={() => setCloseAllPending(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
       {pending &&
         (() => {
@@ -362,7 +483,7 @@ export function PortfolioPanel({ network, sign, sender, symbols, onClosed }: Pro
                             key={fraction}
                             className="btn btn-secondary btn-sm"
                             onClick={() => askToClose(p, fraction)}
-                            disabled={closing}
+                            disabled={closing || closingAll}
                             title={`Close ${fraction === 1 ? 'the whole position' : `${fraction * 100}% of the position`} at market`}
                           >
                             {fraction === 1 ? 'All' : `${fraction * 100}%`}

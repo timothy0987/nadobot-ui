@@ -360,6 +360,11 @@ export default function HowItWorks() {
                 can&apos;t fill within 1% of the market.
               </li>
               <li>
+                <strong>Close all positions</strong>, once you hold 2 or more: one preview showing every position priced at its own
+                market, then one signature each (Nado has no way to close several positions with a single signature). If a signature is
+                rejected it carries on to the rest and tells you exactly which positions closed and which didn&apos;t.
+              </li>
+              <li>
                 <strong>History</strong> of closed positions: entry and exit prices, time held, fees plus funding, and net PnL.
               </li>
               <li>

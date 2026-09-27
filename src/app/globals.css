@@ -1535,3 +1535,22 @@ button:disabled {
 .quick-size .muted {
   margin-right: auto;
 }
+
+.close-all-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.75rem 0;
+}
+
+.close-all-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.9rem;
+}
+
+.close-all-row > span:first-child {
+  font-weight: 600;
+  flex-shrink: 0;
+}

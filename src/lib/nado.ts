@@ -1497,6 +1497,76 @@ export async function closePosition(
   });
 }
 
+export interface CloseAllEntry {
+  productId: number;
+  symbol: string;
+  plan: ClosePlan;
+}
+
+/**
+ * Pure: a full close for every open position, each priced at its own market's touch. A position whose market or quote
+ * is missing gets a plan carrying an error instead of being silently dropped, so the trader sees why it can't close.
+ */
+export function planCloseAll(
+  positions: { productId: number; symbol: string; amountX18: bigint }[],
+  quotes: Record<number, { bid: number | null; ask: number | null }>,
+  products: Record<number, ProductSymbol>
+): CloseAllEntry[] {
+  return positions
+    .filter((p) => p.amountX18 !== 0n)
+    .map((p) => {
+      const product = products[p.productId];
+      if (!product) {
+        return {
+          productId: p.productId,
+          symbol: p.symbol,
+          plan: { amount: 0n, limitPriceX18: 0n, notional: 0, fractionClosed: 0, errors: ["This market's details could not be loaded."] },
+        };
+      }
+      const quote = quotes[p.productId] ?? { bid: null, ask: null };
+      const plan = planClose({
+        positionAmount: p.amountX18,
+        fraction: 1,
+        bid: quote.bid,
+        ask: quote.ask,
+        priceIncrementX18: BigInt(product.price_increment_x18),
+        sizeIncrementX18: BigInt(product.size_increment),
+        minOrderValueX18: BigInt(product.min_size),
+      });
+      return { productId: p.productId, symbol: p.symbol, plan };
+    });
+}
+
+/**
+ * Closes every position in `entries` one at a time (a wallet can only sign one request at a time), skipping any whose
+ * plan already has an error. Keeps going after a failure so one rejected signature doesn't block the rest, and reports
+ * what happened to each.
+ */
+export async function closeAllPositions(
+  network: NadoNetwork,
+  sign: SignTypedDataAsync,
+  sender: `0x${string}`,
+  entries: CloseAllEntry[],
+  onProgress?: (done: number, total: number) => void
+): Promise<{ productId: number; symbol: string; ok: boolean; error?: string }[]> {
+  const results: { productId: number; symbol: string; ok: boolean; error?: string }[] = [];
+  for (const entry of entries) {
+    if (entry.plan.errors.length) {
+      results.push({ productId: entry.productId, symbol: entry.symbol, ok: false, error: entry.plan.errors[0] });
+      onProgress?.(results.length, entries.length);
+      continue;
+    }
+    try {
+      await closePosition(network, sign, { productId: entry.productId, sender, plan: entry.plan });
+      results.push({ productId: entry.productId, symbol: entry.symbol, ok: true });
+    } catch (e: any) {
+      results.push({ productId: entry.productId, symbol: entry.symbol, ok: false, error: e.shortMessage ?? e.message });
+    }
+    onProgress?.(results.length, entries.length);
+  }
+  return results;
+}
+
 /* ---------------------------------- moving a stop-loss or take-profit ---------------------------------- */
 
 export interface TriggerEditPlan {
