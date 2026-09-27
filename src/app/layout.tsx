@@ -4,7 +4,7 @@ import { Providers } from './Providers'
 import { Logo } from './components/Logo'
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://nadobot-ui.vercel.app'),
+  metadataBase: new URL('https://www.nadobot.xyz'),
   title: 'Nadobot · Independent trade automation for Nado',
   description:
     'Nadobot is an independent tool for trading on Nado. Not affiliated with or endorsed by Nado. It never asks for token approvals or transfers.',
